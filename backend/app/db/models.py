@@ -5,6 +5,7 @@ from app.db.base import Base
 from app.modules.assessments.models import Assessment, AssessmentResult
 from app.modules.audit.models import AuditLog
 from app.modules.auth.models import RefreshToken
+from app.modules.imports.models import ImportBatch
 from app.modules.organization.models import (
     AcademicTerm,
     Course,
@@ -30,6 +31,7 @@ __all__ = [
     "OfferingFaculty",
     "RefreshToken",
     "Enrollment",
+    "ImportBatch",
     "Section",
     "Student",
     "StudentSectionHistory",

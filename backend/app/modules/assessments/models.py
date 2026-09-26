@@ -123,6 +123,10 @@ class AssessmentResult(Base):
     source: Mapped[ResultSource] = mapped_column(
         Enum(ResultSource, name="result_source", values_callable=_values), nullable=False
     )
+    # The import batch that last wrote this result (provenance), if any.
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL"), index=True
+    )
     recorded_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

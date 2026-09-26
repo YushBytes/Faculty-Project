@@ -127,6 +127,13 @@ class ResultWriter:
         import_batch_id: uuid.UUID | None = None,
     ) -> UpsertSummary:
         existing = self._results.for_assessment(assessment.id)
+        # Normalise to the stored precision so the row and its audit trail agree exactly.
+        changes = [
+            ResultChange(
+                c.student_id, c.status, c.score.quantize(CENT) if c.score is not None else None
+            )
+            for c in changes
+        ]
         created = updated = unchanged = 0
         with write_guard(self._session, invalid="A result violates a data rule."):
             for change in changes:

@@ -5,6 +5,7 @@
 ``details`` carries field/row/cell-level items where relevant (validation, imports).
 """
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request, status
@@ -12,6 +13,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorDetail(BaseModel):
@@ -83,6 +86,12 @@ def register_error_handlers(app: FastAPI) -> None:
             for err in exc.errors()
         ]
         return _envelope(422, "validation_error", "Request validation failed.", details)
+
+    @app.exception_handler(Exception)
+    async def _unexpected(_: Request, exc: Exception) -> JSONResponse:
+        # Never leak internals; the request's transaction has already been rolled back.
+        logger.exception("Unhandled error", exc_info=exc)
+        return _envelope(500, "internal_error", "An unexpected error occurred.", [])
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:

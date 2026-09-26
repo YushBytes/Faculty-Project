@@ -25,8 +25,8 @@ Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Do
 | 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Done |
 | 4. Students, section history, enrolments, student bulk import | Agent 1 | Done |
 | 5. Assessments, assessment-level results, settings, audit log, recompute hook | Agent 1 | Done |
-| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | Next |
-| 7. Audit, seed data, analytics data contract | Agent 1 | |
+| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | Done |
+| 7. Audit API, seed data, analytics data contract, docs | Agent 1 | Next |
 
 ## One codebase, one branch
 
@@ -43,8 +43,7 @@ backend/
       models.py      every ORM model imported here (one list, both agents add to it)
     api/v1.py        every router registered here (one list, both agents add to it)
     modules/         one package per feature module, from both agents, side by side:
-      auth/ users/ organization/ students/ assessments/ audit/   (done)
-      imports/                                                  Agent 1
+      auth/ users/ organization/ students/ assessments/ audit/ imports/   (done)
       analytics/ attention/ interventions/ reports/          Agent 2
   alembic/versions/  one linear migration chain
   tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
@@ -238,6 +237,36 @@ Anything else is 404. Use `visible_students(user)` (`app/modules/students/servic
   exception aborts the write.
 - **Offering pass mark:** `course_offerings.pass_percent` (default 50) and `config` (JSON object
   of threshold overrides; the assigned faculty may edit it, the pass mark needs ADMIN/HOD).
+
+### Marks import
+
+```
+POST /offerings/{id}/imports | POST /assessments/{id}/import   (multipart .xlsx/.csv, <= 5 MB)
+  -> staged batch + preview            nothing written to results
+GET  /imports/{id}/preview?only=all|issues|errors
+POST /imports/{id}/fix | /exclude | /mapping                   each returns the revalidated preview
+POST /imports/{id}/confirm                                     one transaction
+POST /imports/{id}/discard       GET /imports (history)        GET .../imports/template (.xlsx)
+```
+
+- Wide sheets (`Register No | Name | CT1 | CT2 ...`, headers like `CT1 (max 50)` accepted) and
+  long sheets (`Register No | Assessment | Score | [Max] | [Percentage] | [Status]`) are
+  detected automatically. Assessment columns are matched by name; unmatched or ambiguous
+  columns are errors until mapped or ignored — never guessed.
+- Cells are read as raw strings. Blank = **absent** (warning, never 0); `AB` `A` `-` = absent;
+  `EX` = exempt; anything else non-numeric is an error. Turning a blank into `0` is an explicit,
+  audited fix.
+- Checks: file type (from bytes), missing/ambiguous register-number column, empty or duplicate
+  headers, unknown / not enrolled / dropped students, duplicate student rows, conflicting identity
+  (name belongs to another student) and name mismatch, unknown / duplicate / ambiguous assessment
+  columns, max-marks mismatch, invalid numbers, too many decimals, score below 0 or above max,
+  impossible percentage, invalid status, students missing from the file, results that will be
+  overwritten, the same file already imported.
+- **Confirm** revalidates against current data, refuses while any error remains, then writes
+  results (with `import_batch_id` provenance), audit rows for overwrites, the batch state and the
+  recompute hook in **one transaction** — proven by a test that crashes mid-confirm on real
+  transactions and finds nothing written. Batches expire after 24 h; only the uploader or an
+  offering administrator may change or confirm one.
 
 Other rules: at most one current term (`/terms?is_current=true`); an HOD must belong to a
 department; codes are stored upper-case; deleting anything still referenced returns 409.
