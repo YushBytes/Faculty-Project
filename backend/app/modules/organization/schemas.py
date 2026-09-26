@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -192,12 +192,17 @@ class OfferingCreate(_In):
     course_id: uuid.UUID
     term_id: uuid.UUID
     section_id: uuid.UUID
-    pass_mark_percent: Percent = Decimal("40")
+    pass_percent: Percent = Decimal("50")
+    config: dict[str, Any] = Field(default_factory=dict)
     faculty_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
 
 
 class OfferingUpdate(_In):
-    pass_mark_percent: Percent | None = None
+    """``pass_percent`` needs ADMINISTER access; ``config`` may also be set by the
+    offering's assigned faculty. ``config`` replaces the whole object."""
+
+    pass_percent: Percent | None = None
+    config: dict[str, Any] | None = None
 
 
 class FacultyAssign(_In):
@@ -215,7 +220,8 @@ class OfferingRead(_Out):
     course: CourseSummary
     term: TermSummary
     section: SectionSummary
-    pass_mark_percent: JsonDecimal
+    pass_percent: JsonDecimal
+    config: dict[str, Any]
     faculty: list[FacultySummary]
     created_at: datetime
     updated_at: datetime

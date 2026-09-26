@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.modules.assessments.router import ROUTERS as ASSESSMENT_ROUTERS
 from app.modules.auth.router import router as auth_router
 from app.modules.organization.router import ROUTERS as ORGANIZATION_ROUTERS
 from app.modules.students.router import ROUTERS as STUDENT_ROUTERS
@@ -12,6 +13,7 @@ ROUTERS: list[APIRouter] = [
     users_router,
     *ORGANIZATION_ROUTERS,
     *STUDENT_ROUTERS,
+    *ASSESSMENT_ROUTERS,
 ]
 
 api_v1_router = APIRouter()

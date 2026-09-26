@@ -233,7 +233,7 @@ def get_offering(offering_id: uuid.UUID, actor: CurrentUser, db: DB) -> Offering
 
 @offerings.patch("/{offering_id}", response_model=OfferingRead, responses=_WRITE)
 def update_offering(
-    offering_id: uuid.UUID, body: OfferingUpdate, actor: Manager, db: DB
+    offering_id: uuid.UUID, body: OfferingUpdate, actor: CurrentUser, db: DB
 ) -> OfferingRead:
     return offering_read(OfferingService(db).update(offering_id, body, actor=actor))
 

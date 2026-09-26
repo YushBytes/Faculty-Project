@@ -69,7 +69,8 @@ def offering_read(offering: CourseOffering) -> OfferingRead:
             "course": offering.course,
             "term": offering.term,
             "section": offering.section,
-            "pass_mark_percent": offering.pass_mark_percent,
+            "pass_percent": offering.pass_percent,
+            "config": offering.config,
             "faculty": faculty,
             "created_at": offering.created_at,
             "updated_at": offering.updated_at,
@@ -320,7 +321,8 @@ class OfferingService:
                     course_id=data.course_id,
                     term_id=data.term_id,
                     section_id=data.section_id,
-                    pass_mark_percent=data.pass_mark_percent,
+                    pass_percent=data.pass_percent,
+                    config=data.config,
                     faculty_assignments=[OfferingFaculty(user_id=t.id) for t in teachers],
                 )
             )
@@ -331,8 +333,11 @@ class OfferingService:
     def update(
         self, offering_id: uuid.UUID, data: OfferingUpdate, *, actor: User
     ) -> CourseOffering:
-        offering = self._access.get(actor, offering_id, Access.ADMINISTER)
-        _apply(offering, data.model_dump(exclude_unset=True, exclude_none=True))
+        changes = data.model_dump(exclude_unset=True, exclude_none=True)
+        # Thresholds (config) may be tuned by the teaching faculty; the pass mark may not.
+        needed = Access.ADMINISTER if set(changes) - {"config"} else Access.VIEW
+        offering = self._access.get(actor, offering_id, needed)
+        _apply(offering, changes)
         self._session.commit()
         return offering
 

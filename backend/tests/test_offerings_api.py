@@ -89,7 +89,7 @@ class TestScopeOnDetail:
         response = client.get(f"{OFFERINGS}/{world['cse_a'].id}", headers=auth_headers(faculty))
         assert response.status_code == 200
         body = response.json()
-        assert body["pass_mark_percent"] == 40.0
+        assert body["pass_percent"] == 50.0 and body["config"] == {}
         assert [f["id"] for f in body["faculty"]] == [str(faculty.id)]
         assert {"course", "term", "section"} <= body.keys()
 
@@ -112,7 +112,7 @@ class TestScopeOnDetail:
         offering_id = world["cse_a"].id
         assert (
             client.patch(
-                f"{OFFERINGS}/{offering_id}", json={"pass_mark_percent": 50}, headers=headers
+                f"{OFFERINGS}/{offering_id}", json={"pass_percent": 50}, headers=headers
             ).status_code
             == 403
         )
@@ -137,7 +137,7 @@ class TestScopeOnDetail:
         offering_id = world["ece_a"].id
         assert client.get(f"{OFFERINGS}/{offering_id}", headers=headers).status_code == 200
         response = client.patch(
-            f"{OFFERINGS}/{offering_id}", json={"pass_mark_percent": 50}, headers=headers
+            f"{OFFERINGS}/{offering_id}", json={"pass_percent": 50}, headers=headers
         )
         assert response.status_code == 403
 
@@ -158,13 +158,13 @@ class TestCreate:
             org.course(cse),
             org.section(cse),
             term,
-            pass_mark_percent=45.5,
+            pass_percent=45.5,
             faculty_ids=[str(faculty.id), str(faculty.id)],
         )
         response = client.post(OFFERINGS, json=body, headers=auth_headers(admin))
         assert response.status_code == 201
         created = response.json()
-        assert created["pass_mark_percent"] == 45.5
+        assert created["pass_percent"] == 45.5
         assert [f["id"] for f in created["faculty"]] == [str(faculty.id)]
 
         # The assigned faculty can now see it.
@@ -227,11 +227,40 @@ class TestCreate:
         assert response.status_code == 404
 
     @pytest.mark.parametrize("mark", [-1, 100.01, "abc"])
-    def test_pass_mark_range(
+    def test_pass_percent_range(
         self, client: TestClient, admin: User, org: OrgFactory, cse, term, mark
     ) -> None:
-        body = self._body(org.course(cse), org.section(cse), term, pass_mark_percent=mark)
+        body = self._body(org.course(cse), org.section(cse), term, pass_percent=mark)
         assert client.post(OFFERINGS, json=body, headers=auth_headers(admin)).status_code == 422
+
+
+class TestConfig:
+    def test_assigned_faculty_can_tune_config_but_not_pass_mark(
+        self, client: TestClient, faculty: User, cse_offering: CourseOffering
+    ) -> None:
+        url = f"{OFFERINGS}/{cse_offering.id}"
+        headers = auth_headers(faculty)
+        response = client.patch(url, json={"config": {"TREND_DELTA": 4}}, headers=headers)
+        assert response.status_code == 200 and response.json()["config"] == {"TREND_DELTA": 4}
+        mixed = client.patch(url, json={"config": {}, "pass_percent": 45}, headers=headers)
+        assert mixed.status_code == 403
+
+    def test_unassigned_faculty_cannot_see_or_tune(
+        self, client: TestClient, make_user, cse_offering: CourseOffering
+    ) -> None:
+        stranger = make_user(Role.FACULTY, email="stranger@srmist.edu.in")
+        response = client.patch(
+            f"{OFFERINGS}/{cse_offering.id}", json={"config": {}}, headers=auth_headers(stranger)
+        )
+        assert response.status_code == 404
+
+    def test_config_must_be_an_object(
+        self, client: TestClient, admin: User, cse_offering: CourseOffering
+    ) -> None:
+        response = client.patch(
+            f"{OFFERINGS}/{cse_offering.id}", json={"config": [1, 2]}, headers=auth_headers(admin)
+        )
+        assert response.status_code == 422
 
 
 class TestAdminister:
@@ -240,10 +269,10 @@ class TestAdminister:
     ) -> None:
         response = client.patch(
             f"{OFFERINGS}/{cse_offering.id}",
-            json={"pass_mark_percent": 50},
+            json={"pass_percent": 50},
             headers=auth_headers(hod),
         )
-        assert response.status_code == 200 and response.json()["pass_mark_percent"] == 50.0
+        assert response.status_code == 200 and response.json()["pass_percent"] == 50.0
 
     def test_assign_and_unassign_controls_access(
         self,

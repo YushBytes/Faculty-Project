@@ -30,6 +30,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.db.session import get_db, get_engine, get_session_factory  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.modules.assessments.models import Assessment, AssessmentType  # noqa: E402
 from app.modules.organization.models import (  # noqa: E402
     AcademicTerm,
     Course,
@@ -304,3 +305,48 @@ class StudentFactory:
 @pytest.fixture
 def make_student(db_session: Session) -> StudentFactory:
     return StudentFactory(db_session)
+
+
+# ---------------------------------------------------------------- assessments
+
+
+class AssessmentFactory:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def __call__(
+        self,
+        offering: CourseOffering,
+        name: str = "CT1",
+        *,
+        max_marks: str = "50",
+        weightage: str = "20",
+        sequence_no: int | None = None,
+        published: bool = True,
+    ) -> Assessment:
+        from sqlalchemy import func, select
+
+        if sequence_no is None:
+            current = self._session.scalar(
+                select(func.max(Assessment.sequence_no)).where(
+                    Assessment.offering_id == offering.id
+                )
+            )
+            sequence_no = (current or 0) + 1
+        assessment = Assessment(
+            offering_id=offering.id,
+            name=name,
+            assessment_type=AssessmentType.CT,
+            max_marks=Decimal(max_marks),
+            weightage=Decimal(weightage),
+            sequence_no=sequence_no,
+            is_published=published,
+        )
+        self._session.add(assessment)
+        self._session.flush()
+        return assessment
+
+
+@pytest.fixture
+def make_assessment(db_session: Session) -> AssessmentFactory:
+    return AssessmentFactory(db_session)

@@ -42,15 +42,15 @@ def test_term_dates_ordered(db_session: Session) -> None:
         db_session.flush()
 
 
-def test_pass_mark_range(db_session: Session, org: OrgFactory, cse: Department, term) -> None:
+def test_pass_percent_range(db_session: Session, org: OrgFactory, cse: Department, term) -> None:
     offering = CourseOffering(
         course_id=org.course(cse).id,
         section_id=org.section(cse).id,
         term_id=term.id,
-        pass_mark_percent=Decimal("100.5"),
+        pass_percent=Decimal("100.5"),
     )
     db_session.add(offering)
-    with pytest.raises(IntegrityError, match="ck_course_offerings_pass_mark_range"):
+    with pytest.raises(IntegrityError, match="ck_course_offerings_pass_percent_range"):
         db_session.flush()
 
 

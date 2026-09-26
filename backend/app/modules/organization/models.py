@@ -7,7 +7,7 @@ assignment and therefore of faculty data-access scope.
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
@@ -23,6 +23,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -109,9 +110,8 @@ class CourseOffering(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "course_offerings"
     __table_args__ = (
         UniqueConstraint("course_id", "term_id", "section_id"),
-        CheckConstraint(
-            "pass_mark_percent >= 0 AND pass_mark_percent <= 100", name="pass_mark_range"
-        ),
+        CheckConstraint("pass_percent >= 0 AND pass_percent <= 100", name="pass_percent_range"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="config_is_object"),
     )
 
     course_id: Mapped[uuid.UUID] = mapped_column(
@@ -123,8 +123,13 @@ class CourseOffering(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     section_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("sections.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    pass_mark_percent: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=Decimal("40.00"), server_default=text("40.00")
+    pass_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("50.00"), server_default=text("50.00")
+    )
+    # Per-offering threshold overrides for analytics. Keys are defined by the analytics
+    # layer; the platform only stores a JSON object.
+    config: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
 
     course: Mapped[Course] = relationship(lazy="joined")
@@ -152,3 +157,27 @@ class OfferingFaculty(Base):
 
     offering: Mapped[CourseOffering] = relationship(back_populates="faculty_assignments")
     user: Mapped["User"] = relationship(lazy="joined")
+
+
+class DepartmentSetting(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Department-level key/value settings (e.g. analytics threshold defaults).
+
+    The analytics layer defines the keys and interprets the values (contract C5:
+    offering.config -> department setting -> built-in default). The platform only
+    stores them.
+    """
+
+    __tablename__ = "settings"
+    __table_args__ = (
+        UniqueConstraint("department_id", "key"),
+        CheckConstraint("key ~ '^[A-Za-z0-9_.-]{1,100}$'", name="key_format"),
+    )
+
+    department_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"), nullable=False
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )

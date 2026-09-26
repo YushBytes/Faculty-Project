@@ -24,8 +24,8 @@ Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Do
 | 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Agent 1 | Done |
 | 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Done |
 | 4. Students, section history, enrolments, student bulk import | Agent 1 | Done |
-| 5. Assessments and assessment-level results | Agent 1 | Next |
-| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | |
+| 5. Assessments, assessment-level results, settings, audit log, recompute hook | Agent 1 | Done |
+| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | Next |
 | 7. Audit, seed data, analytics data contract | Agent 1 | |
 
 ## One codebase, one branch
@@ -43,8 +43,8 @@ backend/
       models.py      every ORM model imported here (one list, both agents add to it)
     api/v1.py        every router registered here (one list, both agents add to it)
     modules/         one package per feature module, from both agents, side by side:
-      auth/ users/ organization/ students/   (done)
-      assessments/ imports/ audit/                           Agent 1
+      auth/ users/ organization/ students/ assessments/ audit/   (done)
+      imports/                                                  Agent 1
       analytics/ attention/ interventions/ reports/          Agent 2
   alembic/versions/  one linear migration chain
   tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
@@ -210,6 +210,34 @@ Anything else is 404. Use `visible_students(user)` (`app/modules/students/servic
   none. Errors are row/field level with the offending value; file imports report spreadsheet row
   numbers. `dry_run` validates without writing. Headers are matched flexibly
   (`Reg No` / `Register Number`, `Name`, `Dept`, `Batch`, `Section`, `Email`).
+
+### Assessments and results
+
+| Endpoint | Who |
+|---|---|
+| `GET/POST /offerings/{id}/assessments`, `GET/PATCH/DELETE /assessments/{id}` | anyone who can view the offering |
+| `GET/PUT /assessments/{id}/results`, `DELETE /assessments/{id}/results/{student_id}` | anyone who can view the offering |
+| `GET /offerings/{id}/results` (full results of an offering, for analytics) | anyone who can view the offering |
+| `GET /departments/{id}/settings`; `PUT/DELETE .../settings/{key}` | any signed-in user; ADMIN or that department's HOD |
+| `POST /admin/recompute?offering_id=` | ADMIN |
+
+- **Assessments are rows** (`CT1`, `FT2`, ...; names unique per offering, case-insensitive),
+  with `assessment_type`, `max_marks`, `weightage`, `sequence_no`, `is_published`. Total
+  weightage above 100 is returned as a warning. `max_marks` is locked once results exist.
+- **Results** are one row per `(student_id, assessment_id)` in `assessment_results`:
+  `status` is `present | absent | exempt`, `score` is nullable with no default, and a database
+  CHECK makes `score` present exactly when `status = present`, within `0..max_marks_snapshot`.
+  **Missing** = no row. Absent, exempt and missing are never 0. Blank manual entries are
+  rejected; an explicit `0` is a real score.
+- `PUT .../results` is all-or-nothing with per-entry errors. New results need an ACTIVE
+  enrolment; existing results of dropped students stay visible and editable.
+- **Overwrites and deletions are audited** (`audit_logs`, old and new values, actor, offering).
+- **Recompute hook (C4):** every results write calls `app.core.recompute.recompute(session,
+  assessment_id)` inside the transaction, before commit. It is a no-op until the analytics
+  layer installs its implementation with `set_recompute(fn)`; the hook must not commit, and an
+  exception aborts the write.
+- **Offering pass mark:** `course_offerings.pass_percent` (default 50) and `config` (JSON object
+  of threshold overrides; the assigned faculty may edit it, the pass mark needs ADMIN/HOD).
 
 Other rules: at most one current term (`/terms?is_current=true`); an HOD must belong to a
 department; codes are stored upper-case; deleting anything still referenced returns 409.
