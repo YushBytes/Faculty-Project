@@ -23,8 +23,8 @@ Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Do
 | 1. Skeleton: config, DB session, Alembic, `/health`, Docker, test infra | Agent 1 | Done |
 | 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Agent 1 | Done |
 | 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Done |
-| 4. Students | Agent 1 | Next |
-| 5. Assessments and assessment-level results | Agent 1 | |
+| 4. Students, section history, enrolments, student bulk import | Agent 1 | Done |
+| 5. Assessments and assessment-level results | Agent 1 | Next |
 | 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | |
 | 7. Audit, seed data, analytics data contract | Agent 1 | |
 
@@ -43,8 +43,8 @@ backend/
       models.py      every ORM model imported here (one list, both agents add to it)
     api/v1.py        every router registered here (one list, both agents add to it)
     modules/         one package per feature module, from both agents, side by side:
-      auth/ users/ organization/   (done)
-      students/ assessments/ imports/ audit/                 Agent 1
+      auth/ users/ organization/ students/   (done)
+      assessments/ imports/ audit/                           Agent 1
       analytics/ attention/ interventions/ reports/          Agent 2
   alembic/versions/  one linear migration chain
   tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
@@ -187,6 +187,30 @@ Enforced server-side in `app/modules/organization/scope.py`:
 - `visible_offerings(user)` / `visible_offering_ids(user)` give a SQL condition / subquery to
   filter any query by scope. List endpoints use these, so filters can never widen scope.
 
+### Students and enrolments
+
+| Endpoint | Who |
+|---|---|
+| `GET /students`, `GET /students/{id}`, `GET /students/{id}/sections` | scoped (below) |
+| `POST /students`, `PATCH`, `/deactivate`, `/activate` | ADMIN; HOD for their department |
+| `POST /students/bulk` (JSON), `POST /students/import` (CSV/XLSX) | ADMIN; HOD for their department |
+| `GET /offerings/{id}/students` (roster) | anyone who can view the offering |
+| `POST /offerings/{id}/enrollments`, `/enrollments/from-section`, `DELETE /enrollments/{student_id}` | who can administer the offering |
+
+Student records are PII. **FACULTY** see only students enrolled in their offerings; **HOD** see
+their department's students plus students in offerings they can view; **ADMIN** see all.
+Anything else is 404. Use `visible_students(user)` (`app/modules/students/service.py`) to filter.
+
+- **Historical correctness:** results hang off an *enrolment* (student x offering). Moving a
+  student to another section updates `current_section` and closes/opens a
+  `student_section_history` entry; old enrolments and their results are never rewritten.
+- **Dropping** an enrolment sets `status=DROPPED` and keeps the row. Rosters default to ACTIVE
+  enrolments of active students (`include_dropped`, `include_inactive` to widen).
+- **Bulk import** upserts by `register_number`, validates every row first and writes all rows or
+  none. Errors are row/field level with the offending value; file imports report spreadsheet row
+  numbers. `dry_run` validates without writing. Headers are matched flexibly
+  (`Reg No` / `Register Number`, `Name`, `Dept`, `Batch`, `Section`, `Email`).
+
 Other rules: at most one current term (`/terms?is_current=true`); an HOD must belong to a
 department; codes are stored upper-case; deleting anything still referenced returns 409.
 
@@ -205,6 +229,11 @@ department; codes are stored upper-case; deleting anything still referenced retu
   a one-off job if the API is scaled out.
 - **Refresh token in the JSON body**, not a cookie, so any client can use it; switching to an
   httpOnly cookie is a router-only change if the frontend wants it.
+- **Uploads are read with openpyxl and the csv module, not pandas.** Cells come back as raw
+  strings; each importer validates types explicitly. pandas' type inference turns `"007"` into
+  `7` and blanks into `NaN`, which would break "bad data never silently becomes a number".
+  Limits: 5 MB, 5000 rows, 200 columns; `.xlsx` and UTF-8 `.csv` (`,` `;` or tab) only, detected
+  from the file bytes.
 - **No login rate limiting yet** (no Redis by design). Add at the reverse proxy.
 - **Access tokens stay valid until expiry (max 15 min) after logout;** deactivation still
   cuts them off immediately because every request re-reads the user.

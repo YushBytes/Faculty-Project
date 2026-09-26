@@ -38,6 +38,11 @@ from app.modules.organization.models import (  # noqa: E402
     OfferingFaculty,
     Section,
 )
+from app.modules.students.models import (  # noqa: E402
+    Enrollment,
+    Student,
+    StudentSectionHistory,
+)
 from app.modules.users.models import Role, User  # noqa: E402
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -257,3 +262,45 @@ def cse_offering(
 ) -> CourseOffering:
     """A CSE offering taught by ``faculty``."""
     return org.offering(org.course(cse), org.section(cse), term, faculty=[faculty])
+
+
+# ---------------------------------------------------------------- students
+
+
+class StudentFactory:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._n = 0
+
+    def __call__(
+        self,
+        department: Department,
+        section: Section | None = None,
+        *,
+        register_number: str | None = None,
+        is_active: bool = True,
+        enroll_in: list[CourseOffering] | tuple[CourseOffering, ...] = (),
+    ) -> Student:
+        self._n += 1
+        student = Student(
+            register_number=register_number or f"RA25110030{self._n:05d}",
+            full_name=f"Student {self._n}",
+            email=f"student{self._n}@srmist.edu.in",
+            department_id=department.id,
+            batch_year=2025,
+            current_section_id=section.id if section else None,
+            is_active=is_active,
+        )
+        self._session.add(student)
+        self._session.flush()
+        if section is not None:
+            self._session.add(StudentSectionHistory(student_id=student.id, section_id=section.id))
+        for offering in enroll_in:
+            self._session.add(Enrollment(offering_id=offering.id, student_id=student.id))
+        self._session.flush()
+        return student
+
+
+@pytest.fixture
+def make_student(db_session: Session) -> StudentFactory:
+    return StudentFactory(db_session)

@@ -11,6 +11,7 @@ from app.modules.organization.models import (
     OfferingFaculty,
     Section,
 )
+from app.modules.students.models import Enrollment, Student, StudentSectionHistory
 from app.modules.users.models import User
 
 __all__ = [
@@ -21,6 +22,9 @@ __all__ = [
     "Department",
     "OfferingFaculty",
     "RefreshToken",
+    "Enrollment",
     "Section",
+    "Student",
+    "StudentSectionHistory",
     "User",
 ]
