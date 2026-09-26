@@ -34,18 +34,30 @@ class TestAuthorisation:
         response = client.request(method, path, json={})
         assert response.status_code == 401
 
-    @pytest.mark.parametrize("role_fixture", ["faculty", "hod"])
-    def test_non_admins_are_forbidden(
-        self, client: TestClient, request: pytest.FixtureRequest, role_fixture: str
-    ) -> None:
-        user = request.getfixturevalue(role_fixture)
-        headers = auth_headers(user)
+    def test_faculty_is_forbidden(self, client: TestClient, faculty: User) -> None:
+        headers = auth_headers(faculty)
 
         assert client.get(USERS, headers=headers).status_code == 403
         assert client.post(USERS, json=NEW_USER, headers=headers).status_code == 403
-        response = client.get(f"{USERS}/{user.id}", headers=headers)
+        response = client.get(f"{USERS}/{faculty.id}", headers=headers)
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "permission_denied"
+
+    def test_hod_can_look_up_but_not_manage_users(
+        self, client: TestClient, hod: User, faculty: User
+    ) -> None:
+        headers = auth_headers(hod)
+
+        assert client.get(USERS, headers=headers).status_code == 200
+        assert client.get(f"{USERS}/{faculty.id}", headers=headers).status_code == 200
+        assert client.post(USERS, json=NEW_USER, headers=headers).status_code == 403
+        assert (
+            client.patch(
+                f"{USERS}/{faculty.id}", json={"full_name": "X"}, headers=headers
+            ).status_code
+            == 403
+        )
+        assert client.post(f"{USERS}/{faculty.id}/deactivate", headers=headers).status_code == 403
 
 
 class TestCreate:
@@ -123,14 +135,43 @@ class TestReadAndList:
 
 
 class TestUpdate:
-    def test_update_name_and_role(self, client: TestClient, admin: User, faculty: User) -> None:
+    def test_update_name_role_and_department(
+        self, client: TestClient, admin: User, faculty: User, cse
+    ) -> None:
         response = client.patch(
             f"{USERS}/{faculty.id}",
-            json={"full_name": "Farah K", "role": "HOD"},
+            json={"full_name": "Farah K", "role": "HOD", "department_id": str(cse.id)},
             headers=auth_headers(admin),
         )
         assert response.status_code == 200
-        assert response.json()["full_name"] == "Farah K" and response.json()["role"] == "HOD"
+        body = response.json()
+        assert body["full_name"] == "Farah K" and body["role"] == "HOD"
+        assert body["department_id"] == str(cse.id)
+
+    def test_hod_requires_department(self, client: TestClient, admin: User, faculty: User) -> None:
+        response = client.patch(
+            f"{USERS}/{faculty.id}", json={"role": "HOD"}, headers=auth_headers(admin)
+        )
+        assert response.status_code == 422
+        assert "department" in response.json()["error"]["message"]
+
+        created = client.post(USERS, json={**NEW_USER, "role": "HOD"}, headers=auth_headers(admin))
+        assert created.status_code == 422
+
+    def test_unknown_department_rejected(self, client: TestClient, admin: User) -> None:
+        response = client.post(
+            USERS,
+            json={**NEW_USER, "department_id": str(uuid.uuid4())},
+            headers=auth_headers(admin),
+        )
+        assert response.status_code == 404
+
+    def test_clearing_department(self, client: TestClient, admin: User, make_user, cse) -> None:
+        user = make_user(Role.FACULTY, department=cse)
+        response = client.patch(
+            f"{USERS}/{user.id}", json={"department_id": None}, headers=auth_headers(admin)
+        )
+        assert response.status_code == 200 and response.json()["department_id"] is None
 
     def test_password_reset_revokes_existing_sessions(
         self, client: TestClient, admin: User, faculty: User

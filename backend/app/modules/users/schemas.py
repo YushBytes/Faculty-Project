@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
     full_name: FullName
     password: Password
     role: Role
+    department_id: uuid.UUID | None = None
 
 
 class UserUpdate(BaseModel):
@@ -28,6 +29,7 @@ class UserUpdate(BaseModel):
     full_name: FullName | None = None
     role: Role | None = None
     password: Password | None = None
+    department_id: uuid.UUID | None = None
 
 
 class UserRead(BaseModel):
@@ -37,6 +39,7 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     role: Role
+    department_id: uuid.UUID | None
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime

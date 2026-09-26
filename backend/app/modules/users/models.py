@@ -1,7 +1,8 @@
+import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,6 +21,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # Emails are stored normalised so the unique index is case-insensitive in effect.
         CheckConstraint("email = lower(btrim(email))", name="email_normalised"),
         CheckConstraint("length(full_name) > 0", name="full_name_not_blank"),
+        CheckConstraint("role <> 'HOD' OR department_id IS NOT NULL", name="hod_has_department"),
     )
 
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
@@ -33,3 +35,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # HOD: the department they head (required). FACULTY: home department (optional).
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="RESTRICT"), index=True
+    )

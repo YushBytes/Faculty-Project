@@ -22,8 +22,8 @@ Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Do
 |---|---|---|
 | 1. Skeleton: config, DB session, Alembic, `/health`, Docker, test infra | Agent 1 | Done |
 | 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Agent 1 | Done |
-| 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Next |
-| 4. Students | Agent 1 | |
+| 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Done |
+| 4. Students | Agent 1 | Next |
 | 5. Assessments and assessment-level results | Agent 1 | |
 | 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | |
 | 7. Audit, seed data, analytics data contract | Agent 1 | |
@@ -43,8 +43,8 @@ backend/
       models.py      every ORM model imported here (one list, both agents add to it)
     api/v1.py        every router registered here (one list, both agents add to it)
     modules/         one package per feature module, from both agents, side by side:
-      auth/ users/                 (done)
-      organization/ students/ assessments/ imports/ audit/   Agent 1
+      auth/ users/ organization/   (done)
+      students/ assessments/ imports/ audit/                 Agent 1
       analytics/ attention/ interventions/ reports/          Agent 2
   alembic/versions/  one linear migration chain
   tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
@@ -64,12 +64,18 @@ docker-compose.yml, .env.example, README.md
    enforced in one place. Protect endpoints with `CurrentUser` / `require_roles(...)` from
    `app.modules.auth.dependencies`. If a query you need is missing, add it to the owning
    module's repository rather than querying its tables from elsewhere.
-4. **Migrations:** `git pull`, `alembic upgrade head`, then
+   Anything tied to an offering must pass through `OfferingAccess` / `visible_offering_ids`
+   (see "Access scope").
+4. **Writes:** validate first, mutate after. Make the change inside
+   `with write_guard(session, conflict=..., in_use=...)` (from `app.db.repository`): it runs
+   in a SAVEPOINT and turns unique / foreign-key / check violations into 409 / 409 / 422
+   without breaking the session.
+5. **Migrations:** `git pull`, `alembic upgrade head`, then
    `alembic revision --autogenerate -m "..."` and rename the revision ID to the next number
    (`0003`, `0004`, ...). `tests/test_migrations.py` fails on two heads or on model/schema
    drift; if two heads appear after a pull, point the newer migration's `down_revision` at
    the other one.
-5. **Before every push:** `git pull --rebase origin backend`, then `pytest` and
+6. **Before every push:** `git pull --rebase origin backend`, then `pytest` and
    `ruff check . && ruff format --check .` must pass.
 
 ## Run with Docker Compose
@@ -152,6 +158,37 @@ Codes: `not_authenticated` 401, `permission_denied` 403, `not_found` 404, `confl
 - Roles: `ADMIN`, `HOD`, `FACULTY`. Use `require_roles(...)` / `CurrentUser` from
   `app.modules.auth.dependencies` in any router. Department scope for HOD and offering scope
   for FACULTY arrive in Phase 3.
+
+## Academic structure and access scope
+
+| Resource | Read | Write |
+|---|---|---|
+| `/departments`, `/terms` | any signed-in user | ADMIN |
+| `/courses`, `/sections` | any signed-in user | ADMIN; HOD for their own department |
+| `/offerings` | scoped (below) | ADMIN; HOD for courses of their department |
+| `/offerings/{id}/faculty` | scoped | ADMIN; HOD for courses of their department |
+| `/users` | ADMIN, HOD (look-up for assigning faculty) | ADMIN |
+
+A **course offering** (course x term x section) is the unit of teaching and of data access.
+Faculty are assigned to offerings; everything attached to an offering (students, assessments,
+results, imports, analytics) inherits its scope:
+
+| Role | Can view an offering when | Can administer it when |
+|---|---|---|
+| ADMIN | always | always |
+| HOD | its course is in their department, or they teach it | its course is in their department |
+| FACULTY | they are assigned to it | never |
+
+Enforced server-side in `app/modules/organization/scope.py`:
+
+- `OfferingAccess(session).get(user, offering_id, Access.VIEW | Access.ADMINISTER)` returns the
+  offering, **404** if outside the user's scope (existence is not disclosed), **403** if visible
+  but not administrable.
+- `visible_offerings(user)` / `visible_offering_ids(user)` give a SQL condition / subquery to
+  filter any query by scope. List endpoints use these, so filters can never widen scope.
+
+Other rules: at most one current term (`/terms?is_current=true`); an HOD must belong to a
+department; codes are stored upper-case; deleting anything still referenced returns 409.
 
 ## Design decisions
 

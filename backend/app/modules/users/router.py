@@ -1,5 +1,5 @@
-"""User administration. ADMIN only for now; department-scoped HOD management arrives with
-departments (Phase 3)."""
+"""User administration. ADMIN manages users; HOD may look users up (read-only) to assign
+faculty to offerings."""
 
 import uuid
 from typing import Annotated
@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.errors import ErrorResponse
 from app.core.pagination import Page, PageParams, page_params
 from app.db.session import get_db
-from app.modules.auth.dependencies import AdminUser
-from app.modules.users.models import Role
+from app.modules.auth.dependencies import AdminUser, require_roles
+from app.modules.users.models import Role, User
 from app.modules.users.schemas import UserCreate, UserRead, UserUpdate
 from app.modules.users.service import UserService
 
@@ -20,7 +20,7 @@ router = APIRouter(
     tags=["users"],
     responses={
         401: {"model": ErrorResponse, "description": "Not authenticated"},
-        403: {"model": ErrorResponse, "description": "Not an administrator"},
+        403: {"model": ErrorResponse, "description": "Not permitted"},
     },
 )
 
@@ -30,6 +30,7 @@ def get_user_service(db: Annotated[Session, Depends(get_db)]) -> UserService:
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+AdminOrHod = Annotated[User, Depends(require_roles(Role.ADMIN, Role.HOD))]
 _404 = {404: {"model": ErrorResponse}}
 
 
@@ -45,17 +46,18 @@ def create_user(body: UserCreate, _: AdminUser, service: UserServiceDep) -> User
 
 @router.get("", response_model=Page[UserRead])
 def list_users(
-    _: AdminUser,
+    _: AdminOrHod,
     service: UserServiceDep,
     page: Annotated[PageParams, Depends(page_params)],
     role: Annotated[Role | None, Query()] = None,
     is_active: Annotated[bool | None, Query()] = None,
+    department_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Page[UserRead]:
-    return service.list_users(page, role=role, is_active=is_active)
+    return service.list_users(page, role=role, is_active=is_active, department_id=department_id)
 
 
 @router.get("/{user_id}", response_model=UserRead, responses=_404)
-def get_user(user_id: uuid.UUID, _: AdminUser, service: UserServiceDep) -> UserRead:
+def get_user(user_id: uuid.UUID, _: AdminOrHod, service: UserServiceDep) -> UserRead:
     return UserRead.model_validate(service.get_user(user_id))
 
 

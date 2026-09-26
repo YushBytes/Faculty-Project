@@ -7,6 +7,8 @@ Each test runs inside a transaction that is rolled back afterwards.
 
 import os
 from collections.abc import Iterator
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import Connection, Engine, create_engine, make_url, text
@@ -28,6 +30,14 @@ from app.core.config import get_settings  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.db.session import get_db, get_engine, get_session_factory  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.modules.organization.models import (  # noqa: E402
+    AcademicTerm,
+    Course,
+    CourseOffering,
+    Department,
+    OfferingFaculty,
+    Section,
+)
 from app.modules.users.models import Role, User  # noqa: E402
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -112,6 +122,7 @@ class UserFactory:
         password: str = DEFAULT_PASSWORD,
         is_active: bool = True,
         full_name: str | None = None,
+        department: Department | None = None,
     ) -> User:
         self._n += 1
         user = User(
@@ -120,6 +131,7 @@ class UserFactory:
             password_hash=hash_password(password),
             role=role,
             is_active=is_active,
+            department_id=department.id if department else None,
         )
         self._session.add(user)
         self._session.flush()
@@ -137,8 +149,10 @@ def admin(make_user: UserFactory) -> User:
 
 
 @pytest.fixture
-def hod(make_user: UserFactory) -> User:
-    return make_user(Role.HOD, email="hod.cse@srmist.edu.in", full_name="Harish HOD")
+def hod(make_user: UserFactory, cse: Department) -> User:
+    return make_user(
+        Role.HOD, email="hod.cse@srmist.edu.in", full_name="Harish HOD", department=cse
+    )
 
 
 @pytest.fixture
@@ -155,3 +169,91 @@ def login(client: TestClient, email: str, password: str = DEFAULT_PASSWORD) -> d
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+# ---------------------------------------------------------------- academic structure
+
+
+@pytest.fixture
+def cse(db_session: Session) -> Department:
+    department = Department(code="CSE", name="Computer Science and Engineering")
+    db_session.add(department)
+    db_session.flush()
+    return department
+
+
+@pytest.fixture
+def ece(db_session: Session) -> Department:
+    department = Department(code="ECE", name="Electronics and Communication Engineering")
+    db_session.add(department)
+    db_session.flush()
+    return department
+
+
+@pytest.fixture
+def term(db_session: Session) -> AcademicTerm:
+    academic_term = AcademicTerm(
+        code="2026-ODD",
+        name="Odd Semester 2026-27",
+        academic_year="2026-27",
+        start_date=date(2026, 7, 15),
+        end_date=date(2026, 11, 30),
+        is_current=True,
+    )
+    db_session.add(academic_term)
+    db_session.flush()
+    return academic_term
+
+
+class OrgFactory:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._n = 0
+
+    def course(self, department: Department, code: str | None = None) -> Course:
+        self._n += 1
+        course = Course(
+            department_id=department.id,
+            code=code or f"21{department.code}{200 + self._n}J",
+            name=f"Course {self._n}",
+            credits=Decimal("4"),
+        )
+        self._session.add(course)
+        self._session.flush()
+        return course
+
+    def section(self, department: Department, name: str | None = None) -> Section:
+        self._n += 1
+        section = Section(department_id=department.id, name=name or f"A{self._n}", batch_year=2025)
+        self._session.add(section)
+        self._session.flush()
+        return section
+
+    def offering(
+        self,
+        course: Course,
+        section: Section,
+        term: AcademicTerm,
+        faculty: list[User] | tuple[User, ...] = (),
+    ) -> CourseOffering:
+        offering = CourseOffering(course_id=course.id, section_id=section.id, term_id=term.id)
+        self._session.add(offering)
+        self._session.flush()
+        for user in faculty:
+            self._session.add(OfferingFaculty(offering_id=offering.id, user_id=user.id))
+        self._session.flush()
+        self._session.refresh(offering)
+        return offering
+
+
+@pytest.fixture
+def org(db_session: Session) -> OrgFactory:
+    return OrgFactory(db_session)
+
+
+@pytest.fixture
+def cse_offering(
+    org: OrgFactory, cse: Department, term: AcademicTerm, faculty: User
+) -> CourseOffering:
+    """A CSE offering taught by ``faculty``."""
+    return org.offering(org.course(cse), org.section(cse), term, faculty=[faculty])
