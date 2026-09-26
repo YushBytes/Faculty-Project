@@ -1,7 +1,8 @@
-"""Complete model registry for Alembic. Shared file: agents add models to their own
-registry (models_platform.py / models_intelligence.py), not here."""
+"""Every ORM model, imported in one place so Alembic sees the complete schema.
+Add each new model here."""
 
-from app.db import models_intelligence, models_platform  # noqa: F401  (registers tables)
 from app.db.base import Base
+from app.modules.auth.models import RefreshToken
+from app.modules.users.models import User
 
-__all__ = ["Base"]
+__all__ = ["Base", "RefreshToken", "User"]

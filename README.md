@@ -7,76 +7,70 @@ Academic data -> validated ingestion -> PostgreSQL -> deterministic analytics
   -> teacher intelligence -> actions/interventions -> outcome measurement -> reports
 ```
 
-One repository, one API, one database. Two workstreams build it:
+One application, built by two agents working in the same codebase on the `backend` branch:
 
-| Workstream | Owner | Scope |
+| Part | Built by | Scope |
 |---|---|---|
-| **Platform** | Agent 1 | Auth, users, RBAC and faculty scope, departments/terms/courses/sections/offerings, students, assessments and results, Excel/CSV import pipeline, audit |
-| **Intelligence** | Agent 2 | Analytics, attention/segmentation, interventions and outcomes, reports |
+| Data platform | Agent 1 | Auth, users, RBAC and faculty scope, departments/terms/courses/sections/offerings, students, assessments and results, Excel/CSV import pipeline, audit |
+| Intelligence | Agent 2 | Analytics, attention/segmentation, interventions and outcomes, reports |
 
 Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Docker.
 
 ## Status
 
-| Phase | Workstream | State |
+| Phase | Built by | State |
 |---|---|---|
-| 1. Skeleton: config, DB session, Alembic, `/health`, Docker, test infra | Platform | Done |
-| 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Platform | Done |
-| 3. Departments, terms, courses, sections, offerings, faculty scope | Platform | Next |
-| 4. Students | Platform | |
-| 5. Assessments and assessment-level results | Platform | |
-| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Platform | |
-| 7. Audit, seed data, analytics data contract | Platform | |
+| 1. Skeleton: config, DB session, Alembic, `/health`, Docker, test infra | Agent 1 | Done |
+| 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Agent 1 | Done |
+| 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Next |
+| 4. Students | Agent 1 | |
+| 5. Assessments and assessment-level results | Agent 1 | |
+| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | |
+| 7. Audit, seed data, analytics data contract | Agent 1 | |
 
-## Repository layout and ownership
+## One codebase, one branch
 
-Each workstream owns its own files. Shared files are few and each has one rule.
+Agent 1 and Agent 2 build the **same application**: one FastAPI app, one PostgreSQL
+database, one Alembic migration chain, one test suite. Both push to the **`backend`**
+branch. `main` only receives reviewed merges from `backend`.
 
 ```
 backend/
   app/
-    core/                      SHARED  config, security, errors, pagination
+    core/            config, security, errors, pagination
     db/
-      base.py, session.py,     SHARED
-      mixins.py, models.py
-      models_platform.py       Agent 1 registers its ORM models here
-      models_intelligence.py   Agent 2 registers its ORM models here
-    api/
-      v1.py                    SHARED  mounts both router lists; no edits needed
-      routes_platform.py       Agent 1 registers its routers here
-      routes_intelligence.py   Agent 2 registers its routers here
-    modules/                   Agent 1  one package per domain module
-    intelligence/              Agent 2  one package per domain module
-  alembic/versions/            SHARED  one linear chain (rules below)
-  tests/
-    conftest.py                SHARED  DB fixtures, user factory, auth helpers
-    platform/                  Agent 1 tests
-    intelligence/              Agent 2 tests
-  pyproject.toml               SHARED  add deps under your workstream's comment
-docker-compose.yml, .env.example, README.md   SHARED
+      base.py, session.py, mixins.py
+      models.py      every ORM model imported here (one list, both agents add to it)
+    api/v1.py        every router registered here (one list, both agents add to it)
+    modules/         one package per feature module, from both agents, side by side:
+      auth/ users/                 (done)
+      organization/ students/ assessments/ imports/ audit/   Agent 1
+      analytics/ attention/ interventions/ reports/          Agent 2
+  alembic/versions/  one linear migration chain
+  tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
+  pyproject.toml     one dependency list
+docker-compose.yml, .env.example, README.md
 ```
 
-### Rules that prevent clashes
+### Working rules
 
-1. **Stay in your own folders.** Agent 1: `app/modules/`, `tests/platform/`. Agent 2:
-   `app/intelligence/`, `tests/intelligence/`. Register routers and models only in your
-   own `routes_*.py` / `models_*.py`.
-2. **Every module has the same layers:** `router.py -> service.py -> repository.py`, plus
-   `models.py` and `schemas.py`. Routers never touch the session; services own the
-   transaction (`commit()` once per operation); repositories never commit.
-3. **Migrations are one linear chain.** Before creating one, `git pull` and
-   `alembic upgrade head`, then `alembic revision --autogenerate`. Revision IDs:
-   Agent 1 `0001, 0002, ...`, Agent 2 `i0001, i0002, ...`, filename
-   `YYYYMMDD_<rev>_<slug>.py`. `tests/platform/test_migrations.py` fails if there are two
-   heads or if models and migrations drift; if two heads appear, the later migration
-   updates its `down_revision` to the other head.
-4. **Intelligence reads academic data through platform services/repositories**, never by
-   ad-hoc queries on platform tables, so faculty scope and PII rules stay in one place.
-   Needed data that is missing is requested as a platform endpoint/service method.
-5. **Shared files** (`core/`, `conftest.py`, `pyproject.toml`, `README.md`) take small,
-   additive edits only; pull right before editing them.
-6. `git pull --rebase` before every push. Line endings are normalised to LF via
-   `.gitattributes`.
+1. **Same structure for every module:** `models.py`, `schemas.py`, `repository.py`,
+   `service.py`, `router.py`. Routers never touch the session; services own the
+   transaction (one `commit()` per operation); repositories never commit.
+2. **New module = new folder** under `app/modules/`, plus one line in `app/api/v1.py`
+   (router) and one in `app/db/models.py` (models).
+3. **Reuse, don't duplicate.** Analytics reads students, offerings, assessments and
+   results through the existing services/repositories, so faculty scope and PII rules are
+   enforced in one place. Protect endpoints with `CurrentUser` / `require_roles(...)` from
+   `app.modules.auth.dependencies`. If a query you need is missing, add it to the owning
+   module's repository rather than querying its tables from elsewhere.
+4. **Migrations:** `git pull`, `alembic upgrade head`, then
+   `alembic revision --autogenerate -m "..."` and rename the revision ID to the next number
+   (`0003`, `0004`, ...). `tests/test_migrations.py` fails on two heads or on model/schema
+   drift; if two heads appear after a pull, point the newer migration's `down_revision` at
+   the other one.
+5. **Before every push:** `git pull --rebase origin backend`, then `pytest` and
+   `ruff check . && ruff format --check .` must pass.
 
 ## Run with Docker Compose
 
@@ -114,7 +108,7 @@ with `TEST_DATABASE_URL`.
 ```bash
 cd backend
 pytest                       # everything
-pytest tests/platform        # one workstream
+pytest tests/test_auth_api.py   # one file
 ruff check . && ruff format --check .
 ```
 
