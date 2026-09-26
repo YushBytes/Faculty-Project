@@ -19,6 +19,10 @@ services:
     build: ./backend
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # Dev fallback only; the app refuses to start with it when APP_ENV=production.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me-0123456789abcdef}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acadlytics}:${POSTGRES_PASSWORD:-acadlytics}@db:5432/${POSTGRES_DB:-acadlytics}
     ports:
       - "${API_PORT:-8000}:8000"

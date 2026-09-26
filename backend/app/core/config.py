@@ -3,8 +3,11 @@
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Only acceptable outside production; production refuses to start with it.
+DEV_JWT_SECRET = "dev-only-insecure-secret-change-me-0123456789abcdef"
 
 
 class Environment(StrEnum):
@@ -26,6 +29,11 @@ class Settings(BaseSettings):
     )
     database_echo: bool = False
 
+    jwt_secret_key: str = DEV_JWT_SECRET
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = Field(default=15, ge=1, le=120)
+    refresh_token_expire_days: int = Field(default=7, ge=1, le=90)
+
     @field_validator("database_url")
     @classmethod
     def _require_postgres_psycopg(cls, value: str) -> str:
@@ -35,6 +43,21 @@ class Settings(BaseSettings):
                 "(PostgreSQL is the only supported database)."
             )
         return value
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def _only_hmac(cls, value: str) -> str:
+        if value not in {"HS256", "HS384", "HS512"}:
+            raise ValueError("JWT_ALGORITHM must be one of HS256, HS384, HS512.")
+        return value
+
+    @model_validator(mode="after")
+    def _secure_secret(self) -> "Settings":
+        if len(self.jwt_secret_key) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters.")
+        if self.app_env is Environment.PRODUCTION and self.jwt_secret_key == DEV_JWT_SECRET:
+            raise ValueError("JWT_SECRET_KEY must be set to a unique secret in production.")
+        return self
 
 
 @lru_cache

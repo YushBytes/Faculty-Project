@@ -25,8 +25,10 @@ from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.db.session import get_db, get_engine, get_session_factory  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.modules.users.models import Role, User  # noqa: E402
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -90,3 +92,66 @@ def client(db_session: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = lambda: db_session
     with TestClient(app) as test_client:
         yield test_client
+
+
+# ---------------------------------------------------------------- users & auth helpers
+
+DEFAULT_PASSWORD = "correct-horse-battery"
+
+
+class UserFactory:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._n = 0
+
+    def __call__(
+        self,
+        role: Role = Role.FACULTY,
+        *,
+        email: str | None = None,
+        password: str = DEFAULT_PASSWORD,
+        is_active: bool = True,
+        full_name: str | None = None,
+    ) -> User:
+        self._n += 1
+        user = User(
+            email=email or f"{role.value.lower()}{self._n}@srmist.edu.in",
+            full_name=full_name or f"{role.value.title()} User {self._n}",
+            password_hash=hash_password(password),
+            role=role,
+            is_active=is_active,
+        )
+        self._session.add(user)
+        self._session.flush()
+        return user
+
+
+@pytest.fixture
+def make_user(db_session: Session) -> UserFactory:
+    return UserFactory(db_session)
+
+
+@pytest.fixture
+def admin(make_user: UserFactory) -> User:
+    return make_user(Role.ADMIN, email="admin@srmist.edu.in", full_name="Asha Admin")
+
+
+@pytest.fixture
+def hod(make_user: UserFactory) -> User:
+    return make_user(Role.HOD, email="hod.cse@srmist.edu.in", full_name="Harish HOD")
+
+
+@pytest.fixture
+def faculty(make_user: UserFactory) -> User:
+    return make_user(Role.FACULTY, email="faculty.one@srmist.edu.in", full_name="Farah Faculty")
+
+
+def auth_headers(user: User) -> dict[str, str]:
+    token, _ = create_access_token(user.id, user.role.value)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def login(client: TestClient, email: str, password: str = DEFAULT_PASSWORD) -> dict:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    return response.json()

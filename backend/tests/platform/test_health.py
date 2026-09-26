@@ -1,11 +1,13 @@
 from collections.abc import Iterator
 
+from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.main import create_app
+from tests.conftest import TEST_DATABASE_URL, alembic_config
 
 
 def test_health_ok_reports_database_and_migration(client: TestClient) -> None:
@@ -15,7 +17,8 @@ def test_health_ok_reports_database_and_migration(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["database"] == "ok"
-    assert body["migration_revision"] == "0001"
+    head = ScriptDirectory.from_config(alembic_config(TEST_DATABASE_URL)).get_current_head()
+    assert body["migration_revision"] == head
     assert body["version"]
 
 
