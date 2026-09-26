@@ -100,7 +100,7 @@ Legend — **OWNER**: writes and maintains the code. **CONSUMER**: uses it, may 
 | `/analytics/*` APIs | — | OWNER |
 | Analytics tests, performance tests | — | OWNER |
 | `docs/DATA_MODEL.md`, `docs/IMPORT_FORMAT.md`, `docs/AGENT_2_ANALYTICS_CONTRACT.md` | OWNER | CONSUMER |
-| `docs/ANALYTICS.md` | CONSUMER | OWNER |
+| `docs/ANALYTICS_SPEC.md` | CONSUMER | OWNER |
 | `docs/PROJECT_CONTEXT.md`, `docs/TEAM_OWNERSHIP.md`, `CLAUDE.md` | SHARED — either may update; changes to the ownership matrix or contracts need both to agree | SHARED |
 | Frontend | EXCLUDED | EXCLUDED |
 | Question analytics | EXCLUDED | EXCLUDED |

@@ -244,7 +244,7 @@ Agent 2 is the **correctness owner** for every number and label the system shows
 | Narrative | Deterministic template-based teacher insights — **no LLM** |
 | Export | PDF, XLSX, CSV reports built on the same analytics engine |
 | APIs | All `/api/v1/analytics/*`, `/interventions/*`, `/reports/*` routers (thin) |
-| Quality | Analytics unit tests against hand-computed fixtures, edge-case tests, performance tests, `docs/ANALYTICS.md` |
+| Quality | Analytics unit tests against hand-computed fixtures, edge-case tests, performance tests, `docs/ANALYTICS_SPEC.md` |
 
 **Agent 2 must not** create or edit SQLAlchemy models, write Alembic migrations, modify auth/RBAC, own import parsing/validation, bypass repositories, or duplicate the source of truth. Changes needed in Agent 1's layer go through the protocol in `docs/TEAM_OWNERSHIP.md` §4.
 
