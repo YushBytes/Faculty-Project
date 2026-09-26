@@ -11,3 +11,30 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+
+# --- Added by Agent 2 (Phase 0): build output, extra caches, local data, Windows/OneDrive noise ---
+build/
+dist/
+.eggs/
+.mypy_cache/
+coverage.xml
+*.swp
+
+# Local env files other than the tracked example
+.env.*
+!.env.example
+
+# Local database files and data directories (Postgres lives in the pgdata Docker volume)
+*.db
+*.sqlite3
+pgdata/
+postgres-data/
+
+# Runtime artifacts: uploaded sheets and generated reports must never be committed
+uploads/
+exports/
+*.log
+
+# OneDrive / Windows Explorer noise (this working copy sits inside OneDrive)
+desktop.ini
+Thumbs.db
