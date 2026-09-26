@@ -24,6 +24,7 @@ from app.core.errors import BusinessRuleError, NotFoundError, PermissionDeniedEr
 from app.core.pagination import Page, PageParams
 from app.core.tabular import normalise_header, read_table
 from app.db.repository import write_guard
+from app.modules.audit.service import AuditService
 from app.modules.organization.models import CourseOffering, Department, Section
 from app.modules.organization.scope import (
     Access,
@@ -215,6 +216,12 @@ class StudentService:
         if student.is_active != active:
             student.is_active = active
             student.deactivated_at = None if active else datetime.now(UTC)
+            AuditService(self._session).record(
+                actor_id=actor.id,
+                entity="student",
+                entity_id=student.id,
+                action="activate" if active else "deactivate",
+            )
             self._session.commit()
         return student
 

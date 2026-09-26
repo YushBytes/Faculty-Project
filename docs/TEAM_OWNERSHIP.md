@@ -188,8 +188,12 @@ The same protocol applies in reverse (`U<n>` ids) when Agent 1 needs something f
 | `a34308f` | 2 | `users` + `refresh_tokens` (migration `0002`), Argon2id, JWT + rotating refresh tokens, RBAC (`ADMIN`/`HOD`/`FACULTY`), `/auth` + `/users`, unified error envelope, pagination, `create-admin` CLI |
 | `e2963ea` | — | Removed the per-agent file split introduced in Phase 2; one module tree, one router list, one model registry, one test suite. `main` reset to a placeholder, development moved to `backend`. |
 | `a1f8125` | 3 | Departments, terms, courses, sections, offerings, faculty assignment (migration `0003`); server-side offering scope (`organization/scope.py`); `write_guard` for constraint violations. 143 tests. |
+| `cd28972` | 4 | Students, section history, enrolments, student bulk import (migration `0004`). |
+| `86cb03d` | 5 | Assessments, `assessment_results` (DECISION-1 shape), settings, audit log, recompute hook (migration `0005`; `pass_mark_percent` renamed `pass_percent`). |
+| `db9c4c9` | 6 | Marks import pipeline, atomic confirm (migration `0006`). |
+| (this commit) | 7 | Audit API, seed/demo data (C11), `docs/DATA_MODEL.md`, `docs/IMPORT_FORMAT.md`, `docs/AGENT_2_ANALYTICS_CONTRACT.md`. **Agent 1's work package is complete**; D1–D4 and D7–D11 are delivered (D5/D6 are Agent 2's own tables). |
 
-Agent 1's next phases, in their order: 3 organisation + faculty scope, 4 students, 5 assessments and assessment-level results, 6 import pipeline, 7 audit + seed data + **analytics data contract**.
+Agent 1's phases 1–7 are complete. Start from `docs/AGENT_2_ANALYTICS_CONTRACT.md`.
 
 **Agent 2 progress:** Phase 0 only (this audit). No implementation.
 

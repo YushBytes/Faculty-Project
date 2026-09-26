@@ -7,6 +7,7 @@ from app.core.errors import BusinessRuleError, ConflictError, NotFoundError
 from app.core.pagination import Page, PageParams
 from app.core.security import hash_password
 from app.db.repository import write_guard
+from app.modules.audit.service import AuditService
 from app.modules.auth.repository import RefreshTokenRepository
 from app.modules.organization.models import Department
 from app.modules.users.models import Role, User
@@ -23,6 +24,7 @@ class UserService:
         self._session = session
         self._users = UserRepository(session)
         self._tokens = RefreshTokenRepository(session)
+        self._audit = AuditService(session)
 
     def create_user(self, data: UserCreate) -> User:
         email = normalise_email(data.email)
@@ -82,13 +84,27 @@ class UserService:
             self._guard_last_admin(user, actor, action="change the role of")
         self._check_department(new_role, new_department)
 
+        before = {"role": user.role, "department_id": user.department_id}
         if data.full_name is not None:
             user.full_name = data.full_name
         user.role = new_role
         user.department_id = new_department
+        after = {"role": user.role, "department_id": user.department_id}
+        if after != before:
+            self._audit.record(
+                actor_id=actor.id,
+                entity="user",
+                entity_id=user.id,
+                action="update",
+                old=before,
+                new=after,
+            )
         if data.password is not None:
             user.password_hash = hash_password(data.password)
             self._tokens.revoke_all_for_user(user.id, datetime.now(UTC))
+            self._audit.record(
+                actor_id=actor.id, entity="user", entity_id=user.id, action="password_reset"
+            )
         self._session.commit()
         return user
 
@@ -100,13 +116,22 @@ class UserService:
             self._guard_last_admin(user, actor, action="deactivate")
             user.is_active = False
             self._tokens.revoke_all_for_user(user.id, datetime.now(UTC))
+            self._audit.record(
+                actor_id=actor.id, entity="user", entity_id=user.id, action="deactivate"
+            )
             self._session.commit()
         return user
 
-    def activate_user(self, user_id: uuid.UUID) -> User:
+    def activate_user(self, user_id: uuid.UUID, *, actor: User | None = None) -> User:
         user = self.get_user(user_id)
         if not user.is_active:
             user.is_active = True
+            self._audit.record(
+                actor_id=actor.id if actor else None,
+                entity="user",
+                entity_id=user.id,
+                action="activate",
+            )
             self._session.commit()
         return user
 

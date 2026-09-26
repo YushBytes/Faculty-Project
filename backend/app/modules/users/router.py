@@ -74,5 +74,5 @@ def deactivate_user(user_id: uuid.UUID, actor: AdminUser, service: UserServiceDe
 
 
 @router.post("/{user_id}/activate", response_model=UserRead, responses=_404)
-def activate_user(user_id: uuid.UUID, _: AdminUser, service: UserServiceDep) -> UserRead:
-    return UserRead.model_validate(service.activate_user(user_id))
+def activate_user(user_id: uuid.UUID, actor: AdminUser, service: UserServiceDep) -> UserRead:
+    return UserRead.model_validate(service.activate_user(user_id, actor=actor))

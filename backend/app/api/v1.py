@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.modules.assessments.router import ROUTERS as ASSESSMENT_ROUTERS
+from app.modules.audit.router import ROUTERS as AUDIT_ROUTERS
 from app.modules.auth.router import router as auth_router
 from app.modules.imports.router import ROUTERS as IMPORT_ROUTERS
 from app.modules.organization.router import ROUTERS as ORGANIZATION_ROUTERS
@@ -16,6 +17,7 @@ ROUTERS: list[APIRouter] = [
     *STUDENT_ROUTERS,
     *ASSESSMENT_ROUTERS,
     *IMPORT_ROUTERS,
+    *AUDIT_ROUTERS,
 ]
 
 api_v1_router = APIRouter()

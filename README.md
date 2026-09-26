@@ -26,7 +26,7 @@ Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Do
 | 4. Students, section history, enrolments, student bulk import | Agent 1 | Done |
 | 5. Assessments, assessment-level results, settings, audit log, recompute hook | Agent 1 | Done |
 | 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | Done |
-| 7. Audit API, seed data, analytics data contract, docs | Agent 1 | Next |
+| 7. Audit API, seed/demo data, analytics data contract, docs | Agent 1 | Done |
 
 ## One codebase, one branch
 
@@ -82,6 +82,7 @@ docker-compose.yml, .env.example, README.md
 ```bash
 cp .env.example .env          # set JWT_SECRET_KEY to a long random value
 docker compose up --build
+docker compose exec api python -m app.cli seed-demo      # demo data (empty DB only), or:
 docker compose exec api python -m app.cli create-admin --email admin@srmist.edu.in --name "Admin"
 curl http://localhost:8000/health
 ```
@@ -98,11 +99,25 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -e ".[dev]"
 cp ../.env.example .env
 alembic upgrade head
+python -m app.cli seed-demo        # optional synthetic demo data (see docs/AGENT_2_ANALYTICS_CONTRACT.md §8)
 python -m app.cli create-admin --email admin@srmist.edu.in --name "Admin"
 uvicorn app.main:app --reload
 ```
 
 `create-admin` reads the password from `ACADLYTICS_ADMIN_PASSWORD` or prompts for it.
+`seed-demo` loads fictional users (`admin@acadlytics.dev`, `priya.nair@acadlytics.dev`, ...,
+password `ACADLYTICS_DEMO_PASSWORD`, default `Demo@2026pass`), four offerings, 60 students and
+results with known patterns. It refuses to run in production or on a non-empty database.
+
+## Documentation
+
+| Document | For |
+|---|---|
+| `docs/AGENT_2_ANALYTICS_CONTRACT.md` | how analytics reads data, the recompute hook, thresholds, seed patterns, scope rules — the Agent 1 → Agent 2 handoff |
+| `docs/DATA_MODEL.md` | every table, constraint and migration |
+| `docs/IMPORT_FORMAT.md` | spreadsheet layouts, value rules, every validation code |
+| `docs/PROJECT_CONTEXT.md`, `docs/TEAM_OWNERSHIP.md` | scope, contracts, ownership (shared) |
+| `http://localhost:8000/docs` | live OpenAPI |
 
 ## Tests and lint
 
@@ -237,6 +252,13 @@ Anything else is 404. Use `visible_students(user)` (`app/modules/students/servic
   exception aborts the write.
 - **Offering pass mark:** `course_offerings.pass_percent` (default 50) and `config` (JSON object
   of threshold overrides; the assigned faculty may edit it, the pass mark needs ADMIN/HOD).
+
+### Audit log
+
+`GET /audit-logs?entity=&entity_id=&action=&offering_id=&actor_id=&since=&until=` — ADMIN sees
+everything; others see entries of offerings they can view. Written in the same transaction as the
+change: result overwrites and deletions, import fixes and confirmations, user role / department /
+password / activation changes, student (de)activation, settings changes.
 
 ### Marks import
 
