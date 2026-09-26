@@ -17,7 +17,7 @@ in ``services.py``. That keeps every formula unit testable against hand-computed
 and keeps faculty scope and PII rules enforced in one place (the platform services), not
 duplicated here.
 
-What is in place after Phase 2
+What is in place after Phase 3
 ------------------------------
 
 ``core/contracts.py``   inputs: ``OfferingSnapshot`` and the refs it holds
@@ -31,9 +31,11 @@ What is in place after Phase 2
 ``core/distribution.py`` F8: the ten-bin histogram
 ``core/student.py``     F2, F7, F10-F13: course score, completion, consistency, decline
 ``core/trends.py``      F9: slope, method and classification
+``core/profile.py``     composition: one student, read as a whole (contract 12)
 ``config.py``           the system-default threshold layer, from settings
 ``schemas.py``          the API surface (re-exports the contracts; no second copy)
 ``services.py``         the ``SnapshotSource`` and ``RecomputeHook`` ports
+``repository.py``       the platform's stored data, mapped onto ``OfferingSnapshot``
 
 Still to come, each a pure function set over a snapshot returning the contracts above:
 ``segmentation``, ``attention`` (the R1-R7 engine), ``class_health``, ``comparison`` ("what

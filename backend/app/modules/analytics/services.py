@@ -46,6 +46,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.modules.analytics.core.contracts import OfferingSnapshot
+from app.modules.users.models import User
 
 
 @runtime_checkable
@@ -54,23 +55,36 @@ class SnapshotSource(Protocol):
 
     The implementation reads through the platform's own services/repositories (README rule
     4), so faculty scope and PII rules are enforced once, where the data lives, rather than
-    re-derived here.
+    re-derived here. :class:`app.modules.analytics.repository.AnalyticsRepository` is it.
+
+    The signature changed in Phase 3, when the platform's read interface (contract C3) was
+    delivered, for two reasons worth stating:
+
+    * the session belongs to the implementation, not the call — every platform service in
+      this codebase takes it in ``__init__`` (decision D-001), so analytics matches;
+    * scope needs the **actor**. ``OfferingResultsService.for_user`` turns an offering the
+      user may not see into a 404, which is the behaviour contract C6 requires, and a port
+      with nowhere to put the user would have quietly pushed that decision upwards.
     """
 
     def snapshot_for_offering(
         self,
-        session: Session,
         offering_id: uuid.UUID,
         *,
+        actor: User | None = None,
         published_only: bool = True,
-        active_only: bool = True,
+        include_dropped: bool = False,
     ) -> OfferingSnapshot:
         """Build the snapshot for one offering.
 
+        ``actor`` is the user the read is for: out of their scope is a 404. ``None`` means
+        **no access check** and is only for system work with no user — the recompute hook.
+        Never pass ``None`` with an id that came from a request.
+
         ``published_only`` excludes assessments faculty have created but not published;
-        ``active_only`` excludes withdrawn students from the cohort. Both are the defaults
-        every analytic uses, and both are stated rather than assumed because they change
-        every denominator in the module.
+        ``include_dropped`` brings withdrawn enrolments back into the cohort (with
+        ``is_active`` false, so the engine still leaves them out of class statistics). Both
+        are stated rather than assumed because they change every denominator in the module.
         """
         ...
 

@@ -59,8 +59,17 @@ from app.modules.analytics.core.trends import student_trend
 
 SERIES_BASIS = "published assessments in this offering"
 
+UNWEIGHTED_CAVEAT = (
+    "No weightage is configured for any completed assessment in this offering, so they are "
+    "counted equally. Set weightages on the assessments to change how the course score is "
+    "composed."
+)
+"""Said out loud whenever the course score falls back to a plain mean; see
+:func:`weighted_course_score`."""
 
-def _student_ref(snapshot: OfferingSnapshot, student_id: uuid.UUID) -> StudentRef:
+
+def student_ref(snapshot: OfferingSnapshot, student_id: uuid.UUID) -> StudentRef:
+    """The student's reference, or a clear error naming the offering they are not in."""
     for student in snapshot.students:
         if student.id == student_id:
             return student
@@ -98,15 +107,12 @@ def weighted_course_score(series: StudentSeries) -> Measure:
 
     total_weight = sum((point.weightage for point in points), Decimal(0))
     if total_weight == 0:
-        return insufficient_measure(
-            unit=Unit.PERCENT,
-            n=len(points),
-            minimum_n=1,
-            reason=(
-                "every completed assessment carries a weight of 0, so a weighted course "
-                "score has no denominator"
-            ),
-        )
+        # No weighting configured at all: the platform's default weightage is 0, so this is
+        # the ordinary state of an offering whose faculty never set them. Declining to answer
+        # would withhold a course score from every such class; weighting the assessments
+        # equally is the absence of a weighting, not an invented one. The explanation in
+        # StudentPerformanceHistory names it, and unweighted_course_score is what it returns.
+        return average_percentage(series)
 
     weighted = sum(
         ((point.percentage or Decimal(0)) * point.weightage for point in points), Decimal(0)
@@ -117,6 +123,12 @@ def weighted_course_score(series: StudentSeries) -> Measure:
         n=len(points),
         minimum_n=1,
     )
+
+
+def is_unweighted(series: StudentSeries) -> bool:
+    """Whether no completed assessment carries a weight, so the course score is a plain mean."""
+    points = series.assessed_points
+    return bool(points) and sum((point.weightage for point in points), Decimal(0)) == 0
 
 
 def average_percentage(series: StudentSeries) -> Measure:
@@ -198,25 +210,54 @@ def latest_change(series: StudentSeries) -> Measure:
     )
 
 
+def prior_average(series: StudentSeries, thresholds: ThresholdSet) -> Measure:
+    """The mean of the completed assessments **before** the latest one.
+
+    "Prior history" excludes the result being compared against it — otherwise the latest
+    assessment is part of its own baseline, which flattens exactly the change anyone is
+    looking for. This is the baseline F10 uses, and it is exposed on its own because a
+    student profile shows the number as well as the comparison.
+    """
+    percentages = series.percentages
+    minimum = thresholds.count(ThresholdKey.MIN_TREND_POINTS)
+    if len(percentages) < minimum:
+        return insufficient_measure(
+            unit=Unit.PERCENT,
+            n=len(percentages),
+            minimum_n=minimum,
+            reason=shortfall(have=len(percentages), need=minimum, noun=POINT_NOUN),
+        )
+    return measure(
+        quantize_percent(arithmetic_mean(percentages[:-1])),
+        unit=Unit.PERCENT,
+        n=len(percentages) - 1,
+        minimum_n=minimum - 1,
+    )
+
+
 def decline_against_earlier_mean(series: StudentSeries, thresholds: ThresholdSet) -> Measure:
     """F10: ``drop = P_latest - mean(P over earlier completed assessments)``.
 
     Signed, and negative when the latest result is the weaker one. The rule that reads this
     (R4) fires when the drop is at or below ``-decline_drop_pp``; the sign convention keeps
     the threshold stored as a positive magnitude and the direction in the comparison.
+
+    The baseline is :func:`prior_average`, so the profile's "historical average" and this
+    comparison cannot drift apart.
     """
     percentages = series.percentages
     minimum = thresholds.count(ThresholdKey.MIN_TREND_POINTS)
-    if len(percentages) < minimum:
+    baseline = prior_average(series, thresholds)
+    if not baseline.is_ok or baseline.value is None:
         return insufficient_measure(
             unit=Unit.PERCENTAGE_POINTS,
             n=len(percentages),
             minimum_n=minimum,
-            reason=shortfall(have=len(percentages), need=minimum, noun=POINT_NOUN),
+            reason=baseline.reason
+            or shortfall(have=len(percentages), need=minimum, noun=POINT_NOUN),
         )
-    earlier_mean = arithmetic_mean(percentages[:-1])
     return measure(
-        quantize_percent(percentages[-1] - earlier_mean),
+        quantize_percent(percentages[-1] - baseline.value),
         unit=Unit.PERCENTAGE_POINTS,
         n=len(percentages),
         minimum_n=minimum,
@@ -313,7 +354,7 @@ def student_assessment_performance(
     the two numbers a reader can see.
     """
     stamp = generated_at or datetime.now(UTC)
-    student = _student_ref(snapshot, student_id)
+    student = student_ref(snapshot, student_id)
     series = build_student_series(snapshot, student_id, published_only=False)
     point = next((p for p in series.points if p.assessment_id == assessment.id), None)
     if point is None:
@@ -457,7 +498,7 @@ def student_performance_history(
     """
     _require_matching_pass_mark(snapshot, thresholds)
     stamp = generated_at or datetime.now(UTC)
-    student = _student_ref(snapshot, student_id)
+    student = student_ref(snapshot, student_id)
     series = build_student_series(snapshot, student_id, published_only=published_only)
 
     score = weighted_course_score(series)
@@ -471,7 +512,7 @@ def student_performance_history(
         student_assessment_performance(
             snapshot,
             student_id,
-            _assessment_for(snapshot, latest_point.assessment_id),
+            assessment_for(snapshot, latest_point.assessment_id),
             active_only=active_only,
             generated_at=stamp,
         )
@@ -501,7 +542,8 @@ def student_performance_history(
     )
 
 
-def _assessment_for(snapshot: OfferingSnapshot, assessment_id: uuid.UUID) -> AssessmentRef:
+def assessment_for(snapshot: OfferingSnapshot, assessment_id: uuid.UUID) -> AssessmentRef:
+    """The assessment's reference, by id, published or not."""
     for assessment in snapshot.assessments:
         if assessment.id == assessment_id:
             return assessment
@@ -530,14 +572,17 @@ def _history_explanation(
     spread: Measure,
 ) -> Explanation:
     coverage = series_coverage(series)
+    unweighted = is_unweighted(series)
     contributions = ", ".join(
-        f"{point.assessment_code} {point.percentage}% (weight {point.weightage})"
+        f"{point.assessment_code} {point.percentage}%"
+        + ("" if unweighted else f" (weight {point.weightage})")
         for point in series.assessed_points
     )
 
     if score.is_ok:
         narrative = (
-            f"Weighted course score {score.value}% over {score.n} completed "
+            f"{'Course score (unweighted)' if unweighted else 'Weighted course score'} "
+            f"{score.value}% over {score.n} completed "
             f"{'assessment' if score.n == 1 else 'assessments'} ({contributions}). "
             f"Completion {completion.value}% of {completion.n} required "
             f"{'assessment' if completion.n == 1 else 'assessments'}. "
@@ -576,6 +621,10 @@ def _history_explanation(
             )
         )
 
+    caveats: tuple[str, ...] = ()
+    if is_unweighted(series):
+        caveats = (UNWEIGHTED_CAVEAT,)
+
     return Explanation(
         narrative=narrative,
         formula=(
@@ -586,6 +635,7 @@ def _history_explanation(
         thresholds=(thresholds.resolved[ThresholdKey.MIN_CONSISTENCY_POINTS],),
         pass_mark_percent=thresholds.pass_mark_percent,
         assessments_used=tuple(point.assessment_code for point in series.assessed_points),
+        caveats=caveats,
     )
 
 

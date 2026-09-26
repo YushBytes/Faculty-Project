@@ -49,6 +49,7 @@ from app.modules.analytics.core.vocabulary import (
     InsightCode,
     InsightScope,
     SegmentLabel,
+    StudentFindingCode,
     TrendMethod,
 )
 
@@ -464,6 +465,117 @@ class StudentPerformanceHistory(_Generated):
         return self
 
 
+# ------------------------------------------- 12. StudentPerformanceProfile and its findings
+
+
+class StudentFinding(_Frozen):
+    """One condition a student's series either satisfies or does not, with the evidence.
+
+    Deliberately *not* an :class:`AttentionFlag`. A finding states what the numbers do; a
+    flag says someone should act, carries a severity and has a lifecycle. Keeping them
+    separate means the attention engine can raise a flag from a finding, while a report can
+    show the finding without implying a call to action.
+
+    ``detected`` is three-valued on purpose. ``None`` means the condition could not be
+    evaluated — too few completed assessments, usually — and is not the same answer as
+    ``False``. Saying "no sharp decline" about a student with one result would be a claim the
+    data does not support.
+    """
+
+    code: StudentFindingCode
+    detected: bool | None
+    measure: Measure
+    """The value the condition was evaluated on: the drop, the run length, the change."""
+
+    threshold: ResolvedThreshold | None = None
+    pass_mark_percent: Percent | None = None
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _undetermined_findings_carry_no_verdict(self) -> Self:
+        if self.detected is not None and not self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} reports detected={self.detected} from a measure that "
+                "could not be computed; an unevaluable condition is None, not False"
+            )
+        if self.detected is None and self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} has a computed measure but no verdict; if the value "
+                "exists the condition can be evaluated"
+            )
+        return self
+
+
+class StudentPerformanceProfile(_Generated):
+    """**Contract 12.** One student, read as a whole rather than as a list of numbers.
+
+    Phase 2 computes the measures; this composes them into the answer to "how is this
+    student doing over time?" — the history, the latest result beside the previous one, the
+    comparison against their own earlier work, the trend, and the conditions their series
+    satisfies. Nothing here recomputes a statistic: every number comes from the Phase 2
+    functions, so the profile and a bare measure can never disagree.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    history: StudentPerformanceHistory
+
+    latest: StudentAssessmentPerformance | None = None
+    """The most recent assessment the student was assessed in. Same object the history
+    carries, surfaced here so it reads beside ``previous``."""
+
+    previous: StudentAssessmentPerformance | None = None
+    """The one before that — the previous time there was a performance, skipping absences."""
+
+    change_from_previous: Measure
+    """``P_latest - P_previous``, in percentage **points**. Not a percentage change: a move
+    from 40% to 44% is +4 pp, never "+10%"."""
+
+    historical_average: Measure
+    """Mean of the completed assessments **before** the latest one, per F10's definition of
+    "prior history". The latest result is the thing being compared, not part of the baseline."""
+
+    change_from_historical_average: Measure
+    """``P_latest - historical_average``, signed. The same measure F10 evaluates."""
+
+    findings: tuple[StudentFinding, ...] = ()
+    explanation: Explanation
+
+    @property
+    def trend(self) -> StudentTrend:
+        """The trend, from the history. There is only one, computed once."""
+        return self.history.trend
+
+    def finding(self, code: StudentFindingCode) -> StudentFinding | None:
+        for found in self.findings:
+            if found.code is code:
+                return found
+        return None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        codes = [found.code for found in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
+        if self.previous is None and self.change_from_previous.is_ok:
+            raise ValueError(
+                "a change from the previous assessment was reported without a previous "
+                "assessment to compare against"
+            )
+        if (
+            self.latest is not None
+            and self.history.latest is not None
+            and self.latest.assessment.id != self.history.latest.assessment.id
+        ):
+            raise ValueError(
+                "the profile's latest assessment disagrees with the history's; they must be "
+                "the same performance"
+            )
+        if (self.latest is None) != (self.history.latest is None):
+            raise ValueError("the profile and its history disagree about whether a latest exists")
+        return self
+
+
 # ---------------------------------------------------------------------- 7. StudentSegment
 
 
@@ -736,6 +848,21 @@ class GeneratedInsight(_Generated):
         return self
 
 
+REQUIRED_CONTRACT_NAMES: Final[tuple[str, ...]] = (
+    "AssessmentAnalytics",
+    "StudentAssessmentPerformance",
+    "StudentPerformanceHistory",
+    "StudentTrend",
+    "ClassHealth",
+    "ScoreDistribution",
+    "StudentSegment",
+    "AttentionFlag",
+    "ChangeAnalysis",
+    "InterventionOutcome",
+    "GeneratedInsight",
+)
+"""The eleven the Phase 1 brief named. They may never be dropped or renamed."""
+
 ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
     AssessmentAnalytics,
     StudentAssessmentPerformance,
@@ -748,8 +875,13 @@ ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
     ChangeAnalysis,
     InterventionOutcome,
     GeneratedInsight,
+    StudentPerformanceProfile,
 )
-"""The eleven, in the order the Phase 1 brief lists them. Used by the contract tests.
+"""Every analytics response contract: the eleven above, then what later phases compose.
+
+:data:`REQUIRED_CONTRACT_NAMES` pins the original eleven; this tuple is what the structural
+tests sweep, so a new analytic's contract gets the same guarantees (frozen, no extra fields,
+carries an explanation, stamped) by being added here.
 
 Deliberately a tuple of the public outputs: a new analytic adds its contract here so the
 suite's structural checks (explainability payload, frozen, no extras) cover it too.

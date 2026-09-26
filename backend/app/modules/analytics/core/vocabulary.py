@@ -104,6 +104,28 @@ class OutcomeLabel(StrEnum):
 OUTCOME_VOCABULARY: Final[str] = "intervention_outcome"
 
 
+class StudentFindingCode(StrEnum):
+    """Conditions a single student's series can satisfy.
+
+    These are *observations*, not flags: a finding says "the numbers do this", and nothing
+    about whether anyone should act. Raising a flag, with its severity and lifecycle, is the
+    attention engine's job and reads the same measures through
+    :data:`app.modules.analytics.core.rules.ATTENTION_RULES`.
+    """
+
+    SHARP_DECLINE = "sharp_decline"
+    """F10: the latest result is far below the mean of the earlier ones."""
+
+    REPEATED_LOW = "repeated_low"
+    """F11: a trailing run of completed assessments below the pass mark."""
+
+    IMPROVEMENT = "improvement"
+    """F14: the latest completed assessment is up on the previous one by enough to count."""
+
+
+FINDING_VOCABULARY: Final[str] = "student_finding"
+
+
 class InsightCode(StrEnum):
     """The deterministic insight templates. No LLM: one code, one sentence template.
 
@@ -137,6 +159,7 @@ class InsightScope(StrEnum):
 
 
 VOCABULARIES: Final[dict[str, type[StrEnum]]] = {
+    FINDING_VOCABULARY: StudentFindingCode,
     TREND_VOCABULARY: TrendLabel,
     SEGMENT_VOCABULARY: SegmentLabel,
     CHANGE_VOCABULARY: ChangeDirection,

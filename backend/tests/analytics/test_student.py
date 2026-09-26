@@ -29,6 +29,7 @@ import pytest
 from app.modules.analytics.core.policy import DerivedState, build_student_series
 from app.modules.analytics.core.results import MeasureStatus, Unit
 from app.modules.analytics.core.student import (
+    UNWEIGHTED_CAVEAT,
     average_percentage,
     cohort_histories,
     completion_percent,
@@ -37,6 +38,7 @@ from app.modules.analytics.core.student import (
     is_borderline,
     is_repeated_low,
     is_sharp_decline,
+    is_unweighted,
     latest_change,
     pass_mark_distance,
     repeated_low_run,
@@ -103,12 +105,29 @@ class TestWeightedCourseScore:
         assert withheld.value is None
         assert withheld.reason == "only 0 completed assessments available (minimum 1)"
 
-    def test_all_weights_zero_is_refused_rather_than_averaged(self) -> None:
-        """A configuration problem, not a number to smooth over."""
+    def test_no_weightage_anywhere_falls_back_to_equal_weighting_and_says_so(self) -> None:
+        """The platform's default weightage is 0, so "nothing configured" is the common case.
+
+        Withholding a course score from every offering whose faculty never set weightages
+        would be useless rather than careful. Counting the assessments equally is the absence
+        of a weighting, not an invented one — and the explanation says which it is.
+        """
         snapshot = b.build_snapshot({"s1": (60, 80)}, weightages={"CT1": 0, "CT2": 0})
-        withheld = weighted_course_score(series(b.student_id("s1"), snapshot))
-        assert withheld.status is MeasureStatus.INSUFFICIENT_DATA
-        assert "weight of 0" in (withheld.reason or "")
+        student_series = series(b.student_id("s1"), snapshot)
+        score = weighted_course_score(student_series)
+        assert score.value == Decimal("70.00")
+        assert is_unweighted(student_series) is True
+
+        history = student_performance_history(snapshot, b.student_id("s1"), defaults())
+        assert UNWEIGHTED_CAVEAT in history.explanation.caveats
+        assert "Course score (unweighted)" in history.explanation.narrative
+        assert "weight" not in history.explanation.narrative.split("Completion")[0].replace(
+            "unweighted", ""
+        )
+
+    def test_a_zero_weighted_assessment_among_weighted_ones_simply_does_not_count(self) -> None:
+        snapshot = b.build_snapshot({"s1": (60, 100)}, weightages={"CT1": 1, "CT2": 0})
+        assert weighted_course_score(series(b.student_id("s1"), snapshot)).value == Decimal("60.00")
 
 
 class TestCompletion:

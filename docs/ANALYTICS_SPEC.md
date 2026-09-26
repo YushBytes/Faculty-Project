@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 2 complete — F1–F13 are implemented and tested against hand-computed fixtures. Still to come: segmentation, the R1–R7 attention engine, class health, comparison/what-changed, interventions, insights, reports and the `/analytics/*` API.
+**Status:** Phase 3 complete — F1–F13 implemented, composed into a student performance profile, and wired to the platform's real read interface (contract C3). Still to come: segmentation, the R1–R7 attention engine, class health, comparison/what-changed, interventions, insights, reports and the `/analytics/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -48,8 +48,8 @@ app/modules/analytics/
     config.py           deployment threshold defaults, from settings   [Phase 1]
     schemas.py          API surface: re-exports the contracts          [Phase 1]
     services.py         the SnapshotSource and RecomputeHook ports     [Phase 1]
-    repository.py       platform reads assembled into a snapshot       [Phase 4]
-    router.py           /api/v1/analytics/*                            [Phase 5]
+    repository.py       platform reads mapped onto the snapshot        [Phase 3]
+    router.py           /api/v1/analytics/*                            [later]
     core/
         contracts.py    inputs: OfferingSnapshot, StudentRef, AssessmentRef, ResultRecord
         policy.py       the missing-data policy; StudentSeries
@@ -282,11 +282,56 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Marks in explanation text | Normalised to two decimals for display; the stored value in the contract is untouched | Imported marks arrive variously as `45` and `50.00`; "45 of 50.00 marks" reads like a bug. |
 | Weights on a series | `SeriesPoint` carries `weightage` (default 1) | F2 is a student-level formula and must be computable from a series alone; otherwise every caller has to hold the snapshot too. |
 | What is "latest performance"? | The most recent assessment the student was actually **assessed** in | "Latest" means the last time there was a performance. The gaps after it are still visible in `points`. |
-| All weights zero? | Insufficient data, naming the configuration problem | Falling back to equal weighting would silently answer a different question. |
+| All weights zero? | Equal weighting, with `UNWEIGHTED_CAVEAT` on the explanation and the narrative reading "Course score (unweighted)" | **Revised in Phase 3.** The platform's default weightage is 0, so "nothing configured" is the ordinary state of a real offering, not an error. Withholding a course score from every such class would be useless rather than careful; counting assessments equally is the *absence* of a weighting, and it is said out loud. A zero-weight assessment among weighted ones still simply does not count. |
 | Whole cohort exempt? | Completion is insufficient data, **not** 0% | A completion percentage with no denominator is not zero completion. |
 | Group statistics below `min_group_n`? | Computed and returned with their `n` | The gate withholds *labels*, not numbers — see §5. Labels arrive with segmentation and class health. |
 
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
+
+### Student performance intelligence (Phase 3)
+
+`core/profile.py` composes the Phase 2 measures into contract 12, `StudentPerformanceProfile`. It **computes nothing of its own** — a test asserts every field equals the Phase 2 function it came from, so the profile and a bare measure cannot drift apart.
+
+| Field | Source | Note |
+|---|---|---|
+| `history` | `student.student_performance_history` (contract 3) | the series with its gaps, course score, completion, consistency, volatility, trend |
+| `latest` | the most recent **assessed** assessment | "latest performance" means the last time there was one; the missing tail is still visible in `points` |
+| `previous` | the one before it, skipping absences | |
+| `change_from_previous` | `student.latest_change` | percentage **points**, never a percentage change |
+| `historical_average` | `student.prior_average` | the mean of the work **before** the latest, per F10's definition of prior history |
+| `change_from_historical_average` | `student.decline_against_earlier_mean` (F10) | signed |
+| `trend` | `history.trend` (F9) | one trend, computed once |
+| `findings` | F10, F11, F14 evaluated against their thresholds | see below |
+
+**Findings are not flags.** A `StudentFinding` says what the numbers do; an `AttentionFlag` says someone should act, with a severity and a lifecycle. The attention engine will read the same measures. `detected` is three-valued: `None` means the condition could not be evaluated (too few completed assessments) and is **not** the same answer as `False` — "no sharp decline" about a student with one result would be a claim the data does not support.
+
+| Finding | Condition | Threshold |
+|---|---|---|
+| `sharp_decline` | latest minus the mean of earlier completed, at or below `-decline_drop_pp` | `decline_drop_pp` |
+| `repeated_low` | trailing run below the pass mark, at or above `repeated_low_count` | `repeated_low_count` + the offering's pass mark |
+| `improvement` | latest minus previous, at or above `improvement_delta_pp` | `improvement_delta_pp` |
+
+Improvement is a fact about one student. Ranking students against each other ("most improved") is a cohort question and belongs to the class-intelligence phase.
+
+### Reading real data (Phase 3)
+
+`repository.py` is the only file in the intelligence layer that knows the platform's schema, and it is split so the risky half needs no database:
+
+- `snapshot_from_offering_results(OfferingResults) -> OfferingSnapshot` — **pure**, unit-tested field by field;
+- `AnalyticsRepository` — one call to `OfferingResultsService` (contract C3) plus one to `SettingsService`, then the mapper. No logic of its own.
+
+Mapping decisions worth knowing:
+
+| From the platform | Into the snapshot | Why |
+|---|---|---|
+| `assessments.name` | `AssessmentRef.code` | the platform has no separate code; the label is free text up to 100 characters, so `code` accepts it verbatim rather than upper-casing and truncating it |
+| `results.percentage` | **not carried** | analytics recomputes from `score` and `max_marks`, so there is one rounding rule in the system |
+| `max_marks_snapshot` | checked against the assessment's `max_marks` | the platform guarantees these agree; if they ever do not, the denominator is ambiguous and the read fails loudly rather than guessing |
+| `enrollment_status` + `is_active` | `StudentRef.is_active` | both must hold: a dropped student keeps their results as history but is not in the cohort a class statistic is over |
+| `offering.pass_percent` | `pass_mark_percent` | never a constant |
+| `offering.config`, department `settings` | the C5 override layers | unknown keys are ignored and reported in `ignored_keys`, so a newer configuration cannot break an older deployment |
+
+`SnapshotSource` (in `services.py`) changed shape in Phase 3 for two reasons: the session belongs to the implementation (decision D-001, as every platform service does it), and scope needs the **actor** — `actor=None` is the unscoped system path for the recompute hook and must never be reached from a request.
 
 **Segment priority** is `PERSISTENTLY_LOW → DECLINING → BORDERLINE → IMPROVING → HIGH_PERFORMER → STABLE` — ordered by what a teacher would act on, not by how good the news is. Improving outranks High Performer because it is the one to reinforce; Stable is last because it is the absence of anything to do.
 
@@ -521,6 +566,8 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 2 delivered:** F1–F13 — the statistical primitives, per-assessment group statistics (contract 1), the histogram (contract 6), student metrics and history (contracts 2 and 3), and trends (contract 4). 535 pure tests, every canonical expectation hand-computed and quoted in the test that asserts it.
 
-**Next — Phase 3 (student performance intelligence):** segmentation (F17), the R1–R7 attention engine (F18) and class health (F19), all of which read the measures Phase 2 produces rather than recomputing them.
+**Phase 3 delivered:** contract 12 (`StudentPerformanceProfile`) composing the Phase 2 measures into one student's history, comparisons, trend and findings; `StudentFinding` with its three-valued verdict; and `repository.py`, the pure mapper plus thin repository that reads real stored data through contract C3. 644 pure tests.
 
-**Then:** comparison and what-changed (F15–F16); `repository.py` implementing `SnapshotSource` over the platform's services once D1/D2 land; interventions and observed outcomes (F20); deterministic insights (F21); then the `/analytics/*` routers with `OfferingAccess` scope on every endpoint.
+**Next — Phase 4 (class intelligence):** segmentation (F17), class health (F19) and comparison / what-changed (F15–F16), all reading the measures below them rather than recomputing.
+
+**Then:** the R1–R7 attention engine (F18) and the `recompute` hook it fills (C4); interventions and observed outcomes (F20); deterministic insights (F21); then the `/analytics/*` routers with `OfferingAccess` scope on every endpoint.

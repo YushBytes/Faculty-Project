@@ -22,6 +22,7 @@ from app.modules.analytics.core.outputs import (
     DIFFICULTY_CAVEAT,
     HISTOGRAM_BINS,
     OBSERVATIONAL_CAVEAT,
+    REQUIRED_CONTRACT_NAMES,
     AttentionFlag,
     ChangeAnalysis,
     ChangeGroup,
@@ -169,9 +170,12 @@ class TestEveryContract:
             f"{contract.__name__} must record when it was computed"
         )
 
-    def test_there_are_exactly_eleven(self) -> None:
-        assert len(ANALYTICS_CONTRACTS) == 11
-        assert len(set(ANALYTICS_CONTRACTS)) == 11
+    def test_the_original_eleven_are_all_still_here(self) -> None:
+        """Later phases may add contracts; they may never drop or rename the eleven."""
+        present = {contract.__name__ for contract in ANALYTICS_CONTRACTS}
+        assert set(REQUIRED_CONTRACT_NAMES) <= present
+        assert len(REQUIRED_CONTRACT_NAMES) == 11
+        assert len(set(ANALYTICS_CONTRACTS)) == len(ANALYTICS_CONTRACTS), "no duplicates"
 
 
 class TestTimestamps:

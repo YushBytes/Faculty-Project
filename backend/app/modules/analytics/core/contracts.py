@@ -18,10 +18,23 @@ import uuid
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.core.types import Code, JsonDecimal, Name, Percent
+
+AssessmentLabel = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+]
+"""How an assessment is named to a reader: the platform's own ``assessments.name``.
+
+Not :data:`app.core.types.Code`. The platform has no separate assessment code — the label a
+faculty member types ("CT1", but also "Unit Test 2 (retest)") is free text up to 100
+characters. Forcing it through ``Code`` would upper-case it and reject anything past 32
+characters, so a real assessment would either be refused or silently relabelled in the
+explanation text that quotes it.
+"""
 
 
 class ResultStatus(StrEnum):
@@ -66,7 +79,7 @@ class AssessmentRef(_Frozen):
     """
 
     id: uuid.UUID
-    code: Code
+    code: AssessmentLabel
     name: Name | None = None
     sequence_no: int = Field(ge=1)
     max_marks: JsonDecimal = Field(gt=0, max_digits=6, decimal_places=2)
