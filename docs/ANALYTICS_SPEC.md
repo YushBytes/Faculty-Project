@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 3 complete — F1–F13 implemented, composed into a student performance profile, and wired to the platform's real read interface (contract C3). Still to come: segmentation, the R1–R7 attention engine, class health, comparison/what-changed, interventions, insights, reports and the `/analytics/*` API.
+**Status:** Phase 4 complete — F1–F19 implemented except the R1–R7 attention engine (F18). Student and class intelligence, assessment comparison and "what changed" all run against real stored data. Still to come: attention (F18), interventions (F20), insights (F21), reports and the `/analytics/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -64,7 +64,7 @@ app/modules/analytics/
         trends.py       F9: slope, method, classification; contract 4 [Phase 2]
 ```
 
-**Still to come, one module per formula family:** `segmentation` (F17), `attention` (F18, the R1–R7 engine), `class_health` (F19), `comparison` (F15–F16), `interventions` (F20), `insights` (F21).
+**Still to come, one module per formula family:** `attention` (F18, the R1–R7 engine), `interventions` (F20), `insights` (F21).
 
 They are **not stubbed**. An empty module returning a plausible value is indistinguishable from a working one, and the whole point of this layer is that a caller can tell the difference between "no data" and "computed".
 
@@ -177,6 +177,7 @@ Directive name → implemented key. Every key is a `ThresholdKey` member, an `An
 | — | `low_completion_percent` | 75 | percent | R6 |
 | `BORDERLINE_MARGIN` | `borderline_band_pp` | 5 | pp | R7, Borderline segment |
 | `IMPROVEMENT_THRESHOLD` | `improvement_delta_pp` | 5 | pp | most improved, Improving segment, outcome label |
+| — | `cohort_shift_pp` | 5 | pp | class-mean, pass-rate, participation and spread movement (F16) |
 | — | `min_group_n` | 5 | count | group-statistic gate |
 | — | `min_trend_points` | 2 | count | trend gate |
 | — | `min_consistency_points` | 3 | count | consistency gate |
@@ -205,6 +206,8 @@ All eleven are frozen pydantic models in `core/outputs.py`, reject unknown field
 | 9 | `ChangeAnalysis` | what did the latest assessment change? | `from`/`to_assessment`, `intersection_n`, `class_mean_change`, `pass_percent_change`, `groups` (counts **with their members**), `new_flags` |
 | 10 | `InterventionOutcome` | what was observed after the action? | `baseline_assessments`, `follow_up_assessment`, `target`, `peers`, `net_change`, `label` |
 | 11 | `GeneratedInsight` | what is the one sentence? | `scope`, `subject_id?`, `code`, `text`, `severity?`, evidence in the explanation |
+| 12 | `StudentPerformanceProfile` | how is this student doing over time? | `history`, `latest`/`previous`, `change_from_previous`, `historical_average`, `findings` |
+| 13 | `AssessmentComparison` | how did the same students move between two assessments? | `intersection_n`, the five deltas, both assessments' own analytics |
 
 ### The explainability payload
 
@@ -286,6 +289,16 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Whole cohort exempt? | Completion is insufficient data, **not** 0% | A completion percentage with no denominator is not zero completion. |
 | Group statistics below `min_group_n`? | Computed and returned with their `n` | The gate withholds *labels*, not numbers — see §5. Labels arrive with segmentation and class health. |
 
+| What is "the class mean"? | The mean of the students' **weighted course scores**; the latest paper's mean stays in `latest_assessment` | They answer different questions and differ materially (canonical: 57.36 against 53.50). Mixing them is the easiest way to make a dashboard quietly wrong. |
+| Cohort completion: students or cells? | Cells — every `(student, assessment)` the cohort was required to sit | A class where everyone missed one paper and a class where a quarter sat nothing are different situations; counting students reports them identically. |
+| Is participation measured over the intersection? | No, over the whole active cohort | "Did fewer students turn up" is a question about everyone, not about the ones who turned up. |
+| One movement threshold or four? | One, `cohort_shift_pp` | Whether a movement is worth telling a teacher about should not depend on which of the four numbers moved. |
+| What makes a decline "new"? | F10 true at the later assessment and not at the earlier one, via `policy.series_up_to` | "New" is a claim about two states; a student already declining last time has not newly declined. |
+| Is Stable the fallback? | No. A student with no classifiable trend and no other segment is **unclassified** | Stable says "nothing to act on", which needs a known-flat trend. Falling through would turn "we do not know" into "all is well". |
+| Are attention counts insufficient data? | No — `None`/empty, meaning "not evaluated" | "We did not look" and "we looked and the data was thin" are different statements, and only the second is about the students. |
+| Does the borderline band overlap the low band? | With a pass mark of 40 and a low threshold of 50, yes: every borderline student is also persistently low, so borderline is never primary. At the platform's default pass mark of 50 they separate | A consequence of configuration, not of code; pinned by a test so it stays visible. |
+| Snapshot result lookup | `OfferingSnapshot.result_for` is backed by a `functools.cached_property` index | It was a linear scan called `n × m` times over `n × m` rows; a 300 × 10 cohort now builds in ~33 ms. Frozen, hashable and equality semantics are unchanged, and the index is never serialised. |
+
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
 
 ### Student performance intelligence (Phase 3)
@@ -332,6 +345,71 @@ Mapping decisions worth knowing:
 | `offering.config`, department `settings` | the C5 override layers | unknown keys are ignored and reported in `ignored_keys`, so a newer configuration cannot break an older deployment |
 
 `SnapshotSource` (in `services.py`) changed shape in Phase 3 for two reasons: the session belongs to the implementation (decision D-001, as every platform service does it), and scope needs the **actor** — `actor=None` is the unscoped system path for the recompute hook and must never be reached from a request.
+
+### Class intelligence and "what changed?" (Phase 4)
+
+Three modules, no new arithmetic: every number is a Phase 2 function applied to a cohort-level list, and every verdict is a threshold comparison. **There are no significance tests and no p-values.** Assessments are not equated for difficulty, so a movement is a fact about the marks and never, on its own, a claim about the students.
+
+#### F15 — `AssessmentComparison` (contract 13), in `comparison.py`
+
+A change is measured over the **cohort intersection**: the students assessed in *both* assessments. Subtracting two published means measures the change in who sat the paper as much as the change in how they did.
+
+> Canonical CT1 → CT2: CT1's own mean is 63.67 (n=6) and CT2's is 62.40 (n=5). The naive difference is **−1.27 pp**, a fact about nobody — S7 sat CT1 and not CT2. Over the five students who sat both, the class moved **−4.00 pp**.
+
+| Delta | Over | Source |
+|---|---|---|
+| `mean_change`, `median_change` | intersection | `statistics.mean_percent`, `median_percent` |
+| `pass_percent_change` | intersection | `statistics.pass_percent` |
+| `spread_change` | intersection (needs n ≥ 2) | `statistics.std_dev_percentage_points` |
+| `completion_change` | **the whole active cohort** | `statistics.completion_percent` |
+
+Participation is the deliberate exception: "did fewer students turn up?" is a question about everyone, not about the ones who turned up. Its two denominators are quoted in the explanation because they differ whenever someone is exempt from one assessment and not the other. Both assessments' own statistics travel in `from_analytics`/`to_analytics`, so both numbers are available and neither can be mistaken for the other.
+
+#### F16 — `ChangeAnalysis` (contract 9)
+
+Composes F15 and adds who moved. `class_mean_change` and `pass_percent_change` are the *same objects* as the comparison's, enforced by a validator — not a second calculation.
+
+**Movement groups**, five, always present, each carrying its members (a count with no names is not actionable):
+
+| Group | Condition |
+|---|---|
+| Crossed up to the pass mark | `P_before < pass ≤ P_after` |
+| Crossed below the pass mark | `P_after < pass ≤ P_before` |
+| Improved by at least the margin | `Δ ≥ improvement_delta_pp` |
+| Declined by at least the margin | `Δ ≤ −improvement_delta_pp` |
+| Newly showing a sharp decline | F10 true on the series truncated at the later assessment, and **not** true truncated at the earlier one |
+
+"Newly" is a claim about two states, so the rule is evaluated twice against `policy.series_up_to`. A student whose earlier series was too short to judge counts as new when the condition holds now — the condition has appeared, which is what the word means.
+
+**Class findings**, four, judged against `cohort_shift_pp`: `class_mean_moved`, `pass_rate_moved`, `participation_moved`, `spread_moved`. `detected = |Δ| ≥ cohort_shift_pp`, with `direction` carried separately so magnitudes are never read as gains. All four are always returned: "the pass rate did not move" is an answer a teacher wants.
+
+#### F17 — `StudentSegment` (contract 7), in `segmentation.py`
+
+Pure composition of the Phase 2/3 facts already on the student's profile.
+
+| Segment | Satisfied when |
+|---|---|
+| Persistently Low | `W ≤ low_performance_percent`, or a trailing run below the pass mark (F11) |
+| Declining | trend is Declining (F9), or a sharp decline (F10) |
+| Borderline | `|W − pass_mark| ≤ borderline_band_pp` |
+| Improving | trend is Improving (F9) |
+| High Performer | `W ≥ high_performance_percent` |
+| Stable | none of the above, **and the trend was classifiable** |
+
+`primary` is the first satisfied in `SEGMENT_PRIORITY`; every satisfied segment travels as a `factor` with its own evidence. `segment_counts` counts primaries only, so a borderline-and-improving student is counted once.
+
+#### F19 — `ClassHealth` (contract 5), in `class_health.py`
+
+| KPI | Definition |
+|---|---|
+| `class_mean`, `median` | over the students' **weighted course scores** |
+| `pass_percent` | share of *course scores* at or above the pass mark |
+| `completion_percent` | over every `(student, published assessment)` cell the cohort was required to sit — cells, not students |
+| `course_score_distribution` | the ten-bin histogram of course scores |
+| `segment_counts` | primary segments (F17) |
+| `latest_assessment` | that paper's own `AssessmentAnalytics` |
+| `latest_comparison`, `findings` | the most recent adjacent comparison and its movements |
+| `students_requiring_attention`, `flag_counts` | **not evaluated** — `None` and empty |
 
 **Segment priority** is `PERSISTENTLY_LOW → DECLINING → BORDERLINE → IMPROVING → HIGH_PERFORMER → STABLE` — ordered by what a teacher would act on, not by how good the news is. Improving outranks High Performer because it is the one to reinforce; Stable is last because it is the absence of anything to do.
 
@@ -566,8 +644,10 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 2 delivered:** F1–F13 — the statistical primitives, per-assessment group statistics (contract 1), the histogram (contract 6), student metrics and history (contracts 2 and 3), and trends (contract 4). 535 pure tests, every canonical expectation hand-computed and quoted in the test that asserts it.
 
-**Phase 3 delivered:** contract 12 (`StudentPerformanceProfile`) composing the Phase 2 measures into one student's history, comparisons, trend and findings; `StudentFinding` with its three-valued verdict; and `repository.py`, the pure mapper plus thin repository that reads real stored data through contract C3. 644 pure tests.
+**Phase 3 delivered:** contract 12 (`StudentPerformanceProfile`) composing the Phase 2 measures into one student's history, comparisons, trend and findings; `StudentFinding` with its three-valued verdict; and `repository.py`, the pure mapper plus thin repository that reads real stored data through contract C3.
 
-**Next — Phase 4 (class intelligence):** segmentation (F17), class health (F19) and comparison / what-changed (F15–F16), all reading the measures below them rather than recomputing.
+**Phase 4 delivered:** F15 (`AssessmentComparison`, contract 13), F16 (`ChangeAnalysis`, contract 9), F17 (`StudentSegment`, contract 7) and F19 (`ClassHealth`, contract 5); `ClassFinding` for cohort movement; one new threshold, `cohort_shift_pp`; and a cached result index behind `OfferingSnapshot.result_for`. 783 pure tests.
 
-**Then:** the R1–R7 attention engine (F18) and the `recompute` hook it fills (C4); interventions and observed outcomes (F20); deterministic insights (F21); then the `/analytics/*` routers with `OfferingAccess` scope on every endpoint.
+**Next — Phase 5 (attention):** the R1–R7 engine (F18), the flag lifecycle, `attention_flags` storage with its own migration, and the `recompute` hook it fills (C4). It completes `ClassHealth.students_requiring_attention` and `ChangeAnalysis.new_flags`, both of which currently report "not evaluated".
+
+**Then:** interventions and observed outcomes (F20); deterministic insights (F21); reports; then the `/analytics/*` routers with `OfferingAccess` scope on every endpoint.

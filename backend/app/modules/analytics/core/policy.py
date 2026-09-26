@@ -227,6 +227,21 @@ def build_all_series(
     )
 
 
+def series_up_to(series: StudentSeries, sequence_no: int) -> StudentSeries:
+    """The same series as it stood at ``sequence_no``, later assessments dropped.
+
+    Needed to say a condition is **new**: "this student has newly declined" is a claim about
+    two states, so the rule has to be evaluated against the series as it was before the
+    latest assessment as well as after it. Re-deriving that by hand at each call site is how
+    two callers end up disagreeing about what "before" meant.
+
+    Points are kept, not filtered by state: a gap that existed then still existed.
+    """
+    return series.model_copy(
+        update={"points": tuple(p for p in series.points if p.sequence_no <= sequence_no)}
+    )
+
+
 def assessed_scores(
     snapshot: OfferingSnapshot,
     assessment: AssessmentRef,

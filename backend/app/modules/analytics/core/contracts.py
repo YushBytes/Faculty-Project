@@ -14,7 +14,9 @@ states meaning "no row exists" and "not all assessments have a row", so they liv
 
 from __future__ import annotations
 
+import functools
 import uuid
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
@@ -184,9 +186,22 @@ class OfferingSnapshot(_Frozen):
         """Enrolled, active students: the denominator basis for completion."""
         return tuple(s for s in self.students if s.is_active)
 
+    @functools.cached_property
+    def _result_index(self) -> Mapping[tuple[uuid.UUID, uuid.UUID], ResultRecord]:
+        """``(student, assessment) -> result``, built once per snapshot.
+
+        A linear scan per lookup is fine for one student and quadratic for a cohort: every
+        analytic asks this question once per student per assessment, so the scan is walked
+        ``n * m`` times over ``n * m`` rows. At 800 students and 10 assessments that is tens
+        of millions of comparisons for a dashboard read.
+
+        The cache lives in the instance dictionary rather than in a field: the model stays
+        frozen, hashable and equal to an identical snapshot, and the index is never part of
+        the contract or its serialisation. The snapshot is immutable, so the index cannot go
+        stale.
+        """
+        return {(r.student_id, r.assessment_id): r for r in self.results}
+
     def result_for(self, student_id: uuid.UUID, assessment_id: uuid.UUID) -> ResultRecord | None:
         """The stored result, or ``None`` when no row exists (the derived *missing* state)."""
-        for result in self.results:
-            if result.student_id == student_id and result.assessment_id == assessment_id:
-                return result
-        return None
+        return self._result_index.get((student_id, assessment_id))

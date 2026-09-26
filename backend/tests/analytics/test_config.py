@@ -56,6 +56,7 @@ class TestDefaults:
         assert resolved.value(ThresholdKey.DECLINE_DROP_PP) == Decimal("15")
         assert resolved.value(ThresholdKey.BORDERLINE_BAND_PP) == Decimal("5")
         assert resolved.value(ThresholdKey.IMPROVEMENT_DELTA_PP) == Decimal("5")
+        assert resolved.value(ThresholdKey.COHORT_SHIFT_PP) == Decimal("5")
         assert resolved.count(ThresholdKey.REPEATED_LOW_COUNT) == 3
         assert resolved.count(ThresholdKey.MIN_OUTCOME_GROUP_N) == 3
 

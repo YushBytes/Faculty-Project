@@ -46,6 +46,7 @@ from app.modules.analytics.core.rules import AttentionRuleCode, FlagSeverity, Fl
 from app.modules.analytics.core.thresholds import ResolvedThreshold
 from app.modules.analytics.core.vocabulary import (
     ChangeDirection,
+    ClassFindingCode,
     InsightCode,
     InsightScope,
     SegmentLabel,
@@ -506,6 +507,45 @@ class StudentFinding(_Frozen):
         return self
 
 
+class ClassFinding(_Frozen):
+    """One cohort-level movement that either reached its configured magnitude or did not.
+
+    The same three-valued shape as :class:`StudentFinding`, for the same reason: a class
+    too small for the movement to mean anything gets ``detected=None``, which is not the
+    same answer as "the class did not move".
+
+    ``direction`` is carried separately from the sign of the measure so a reader never has
+    to infer it, and so "moved down by 10 pp" and "moved up by 10 pp" cannot be confused in
+    a report that shows magnitudes.
+    """
+
+    code: ClassFindingCode
+    detected: bool | None
+    direction: ChangeDirection | None = None
+    measure: Measure
+    """The signed movement, in percentage points, that the condition was evaluated on."""
+
+    threshold: ResolvedThreshold | None = None
+    n: int = Field(ge=0)
+    """Students the movement was measured over: the cohort intersection."""
+
+    minimum_n: int | None = Field(default=None, ge=0)
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _verdict_matches_the_evidence(self) -> Self:
+        if self.detected is not None and not self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} reports detected={self.detected} from a measure that "
+                "could not be computed; an unevaluable movement is None, not False"
+            )
+        if self.detected is not None and self.direction is None:
+            raise ValueError(f"{self.code.value} was evaluated but does not say which way")
+        if self.detected is None and self.direction is not None:
+            raise ValueError(f"{self.code.value} could not be evaluated but claims a direction")
+        return self
+
+
 class StudentPerformanceProfile(_Generated):
     """**Contract 12.** One student, read as a whole rather than as a list of numbers.
 
@@ -670,10 +710,18 @@ class ClassHealth(_Generated):
     """**Contract 5.** Offering-level KPIs, as a dashboard header.
 
     Everything here is an aggregate of the contracts above; nothing is computed a second
-    way. ``students_requiring_attention`` follows the escalation rule in
-    :func:`~app.modules.analytics.core.rules.requires_attention` — any High rule, or two
-    Medium ones — and is reported beside the per-severity counts so the number can be taken
-    apart.
+    way.
+
+    **Two different questions, kept apart.** ``class_mean`` is the mean of the students'
+    *weighted course scores* — how the class is doing in the course. The latest paper's own
+    statistics live in ``latest_assessment``. They answer different questions and differ by
+    a lot (in the canonical fixture, 57.36 against 53.50), so mixing them would make a
+    dashboard quietly wrong.
+
+    ``students_requiring_attention`` is ``None`` when this build did not evaluate attention
+    at all. That is deliberately **not** an insufficient-data measure: "we did not look" and
+    "we looked and the data was too thin" are different statements, and only the second one
+    is about the students. The attention engine fills it in a later phase.
     """
 
     offering_id: uuid.UUID
@@ -682,14 +730,30 @@ class ClassHealth(_Generated):
     published_assessments: int = Field(ge=0)
 
     class_mean: Measure
+    """Mean of the students' weighted course scores, over students who have one."""
+
     median: Measure
     pass_percent: Measure
+    """Share of students whose weighted course score is at or above the pass mark."""
+
     completion_percent: Measure
-    students_requiring_attention: Measure
+    """Over every (student, published assessment) cell the cohort was required to sit."""
+
+    students_requiring_attention: Measure | None = None
+    """``None`` means attention was not evaluated in this build. See the class docstring."""
 
     segment_counts: Mapping[SegmentLabel, int] = Field(default_factory=dict)
     flag_counts: Mapping[FlagSeverity, int] = Field(default_factory=dict)
+    """Empty while attention is unevaluated; see ``students_requiring_attention``."""
+
+    course_score_distribution: ScoreDistribution | None = None
+    """The spread of weighted course scores across the cohort."""
+
+    findings: tuple[ClassFinding, ...] = ()
+    """Movements in the most recent comparison that reached their configured magnitude."""
+
     latest_assessment: AssessmentAnalytics | None = None
+    latest_comparison: AssessmentComparison | None = None
     coverage: DataCoverage
     explanation: Explanation
 
@@ -702,6 +766,78 @@ class ClassHealth(_Generated):
             bad = {k: v for k, v in counts.items() if v < 0}
             if bad:
                 raise ValueError(f"{name} has negative entries {bad}")
+        if self.students_requiring_attention is None and self.flag_counts:
+            raise ValueError(
+                "flag counts were reported without evaluating attention; leave both empty "
+                "rather than implying the flags were counted"
+            )
+        if sum(self.segment_counts.values()) > self.cohort_n:
+            raise ValueError(
+                f"segment counts total {sum(self.segment_counts.values())} for a cohort of "
+                f"{self.cohort_n}: each student has exactly one primary segment"
+            )
+        codes = [finding.code for finding in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
+        return self
+
+
+# --------------------------------------------------- 13. AssessmentComparison (F15)
+
+
+class AssessmentComparison(_Generated):
+    """**Contract 13.** How the same students' results moved between two assessments.
+
+    Every delta here is over the **cohort intersection** — the students assessed in *both*
+    assessments — and that is the whole point of the contract. Two assessments' published
+    means are over different sets of students, so subtracting them measures the change in
+    who sat the paper as much as the change in how they did. In the canonical fixture the
+    naive subtraction gives -1.27 pp and the honest one gives -4.00 pp.
+
+    Each assessment's own full-cohort statistics travel alongside in ``from_analytics`` and
+    ``to_analytics``, so both numbers are available and neither can be mistaken for the
+    other.
+
+    ``completion_change`` is the exception that proves the rule: participation is about who
+    sat at all, so it is measured over the **whole active cohort**, not the intersection.
+    Its two denominators are quoted in the explanation because they differ whenever someone
+    is exempt from one assessment and not the other.
+    """
+
+    offering_id: uuid.UUID
+    from_assessment: AssessmentRef
+    to_assessment: AssessmentRef
+    intersection_n: int = Field(ge=0)
+
+    mean_change: Measure
+    median_change: Measure
+    pass_percent_change: Measure
+    spread_change: Measure
+    """Change in population standard deviation: positive means the class spread out."""
+
+    completion_change: Measure
+    """Over the whole active cohort, not the intersection."""
+
+    from_analytics: AssessmentAnalytics | None = None
+    to_analytics: AssessmentAnalytics | None = None
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _ordered_and_caveated(self) -> Self:
+        self.explanation.requires(DIFFICULTY_CAVEAT, field="AssessmentComparison.explanation")
+        if self.from_assessment.id == self.to_assessment.id:
+            raise ValueError("an assessment cannot be compared with itself")
+        if self.from_assessment.sequence_no >= self.to_assessment.sequence_no:
+            raise ValueError(
+                f"{self.from_assessment.code} (sequence {self.from_assessment.sequence_no}) "
+                f"does not come before {self.to_assessment.code} "
+                f"(sequence {self.to_assessment.sequence_no}); a comparison reads forwards"
+            )
+        if self.intersection_n == 0 and self.mean_change.is_ok:
+            raise ValueError(
+                "no student was assessed in both assessments, so no change can be reported"
+            )
         return self
 
 
@@ -743,7 +879,22 @@ class ChangeAnalysis(_Generated):
     groups: tuple[ChangeGroup, ...] = ()
     """Crossed the pass mark upward/downward, newly declining, newly flagged, and so on."""
 
+    comparison: AssessmentComparison | None = None
+    """The full statistical comparison this analysis is built on.
+
+    ``class_mean_change`` and ``pass_percent_change`` above are the *same objects* as the
+    comparison's, not a second calculation — they stay at the top level because they are
+    what a dashboard reads first.
+    """
+
+    findings: tuple[ClassFinding, ...] = ()
+    """Which movements reached the configured magnitude."""
+
     new_flags: tuple[AttentionFlag, ...] = ()
+    """Attention flags raised by this assessment. Empty until the attention engine exists;
+    an empty tuple here means "none were raised", and a build that does not evaluate
+    attention at all says so in the explanation rather than implying a clean bill."""
+
     coverage: DataCoverage
     explanation: Explanation
 
@@ -755,6 +906,19 @@ class ChangeAnalysis(_Generated):
                 "there is no earlier assessment to compare against, so no change may be "
                 "reported; return insufficient_data instead"
             )
+        if self.comparison is not None:
+            if self.comparison.to_assessment.id != self.to_assessment.id:
+                raise ValueError("the comparison describes a different assessment")
+            if self.comparison.mean_change != self.class_mean_change:
+                raise ValueError(
+                    "class_mean_change disagrees with the comparison it came from; it must "
+                    "be the same measure, not a second calculation"
+                )
+            if self.comparison.intersection_n != self.intersection_n:
+                raise ValueError("intersection_n disagrees with the comparison")
+        codes = [finding.code for finding in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
         return self
 
 
@@ -876,6 +1040,7 @@ ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
     InterventionOutcome,
     GeneratedInsight,
     StudentPerformanceProfile,
+    AssessmentComparison,
 )
 """Every analytics response contract: the eleven above, then what later phases compose.
 

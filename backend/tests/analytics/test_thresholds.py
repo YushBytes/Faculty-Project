@@ -27,6 +27,7 @@ class TestDefaults:
         assert resolved.value(ThresholdKey.TREND_DELTA_PP) == Decimal("5")
         assert resolved.value(ThresholdKey.LOW_COMPLETION_PERCENT) == Decimal("75")
         assert resolved.value(ThresholdKey.BORDERLINE_BAND_PP) == Decimal("5")
+        assert resolved.value(ThresholdKey.COHORT_SHIFT_PP) == Decimal("5")
         assert resolved.count(ThresholdKey.MIN_GROUP_N) == 5
         assert resolved.count(ThresholdKey.MIN_TREND_POINTS) == 2
         assert resolved.count(ThresholdKey.MIN_CONSISTENCY_POINTS) == 3
@@ -105,7 +106,9 @@ class TestValidation:
                 offering_overrides={"low_completion_percent": "150"},
             )
 
-    @pytest.mark.parametrize("key", ["decline_drop_pp", "trend_delta_pp", "borderline_band_pp"])
+    @pytest.mark.parametrize(
+        "key", ["decline_drop_pp", "trend_delta_pp", "borderline_band_pp", "cohort_shift_pp"]
+    )
     def test_magnitude_thresholds_must_be_positive(self, key: str) -> None:
         """Stored as positive magnitudes; the rule applies the direction."""
         with pytest.raises(ValueError, match="must be positive"):

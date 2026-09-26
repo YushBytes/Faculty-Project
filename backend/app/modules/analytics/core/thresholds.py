@@ -65,6 +65,19 @@ class ThresholdKey(StrEnum):
     BORDERLINE_BAND_PP = "borderline_band_pp"
     """R7: distance either side of the pass mark that counts as borderline."""
 
+    COHORT_SHIFT_PP = "cohort_shift_pp"
+    """Movement, in percentage points, that counts as a real shift for a whole cohort.
+
+    One key for every cohort-level movement — class mean, pass rate, participation and
+    spread — rather than four that would drift apart in configuration. It answers "is this
+    worth telling a teacher about", and the answer should not depend on which of the four
+    numbers moved.
+
+    Deliberately separate from ``IMPROVEMENT_DELTA_PP``, which is about one student between
+    two assessments: a 5 pp move by one student and a 5 pp move by a whole class are
+    different events that a department may well want to tune independently.
+    """
+
     IMPROVEMENT_DELTA_PP = "improvement_delta_pp"
     """Rise, in percentage points, that counts as a real improvement rather than noise.
 
@@ -97,6 +110,7 @@ THRESHOLD_DEFAULTS: Final[Mapping[ThresholdKey, Decimal]] = {
     ThresholdKey.LOW_COMPLETION_PERCENT: Decimal("75"),
     ThresholdKey.BORDERLINE_BAND_PP: Decimal("5"),
     ThresholdKey.IMPROVEMENT_DELTA_PP: Decimal("5"),
+    ThresholdKey.COHORT_SHIFT_PP: Decimal("5"),
     ThresholdKey.MIN_GROUP_N: Decimal("5"),
     ThresholdKey.MIN_TREND_POINTS: Decimal("2"),
     ThresholdKey.MIN_CONSISTENCY_POINTS: Decimal("3"),
@@ -127,6 +141,7 @@ _POSITIVE_PP_KEYS: Final[frozenset[ThresholdKey]] = frozenset(
         ThresholdKey.TREND_DELTA_PP,
         ThresholdKey.BORDERLINE_BAND_PP,
         ThresholdKey.IMPROVEMENT_DELTA_PP,
+        ThresholdKey.COHORT_SHIFT_PP,
     }
 )
 

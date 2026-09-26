@@ -64,6 +64,7 @@ class AnalyticsSettings(BaseSettings):
     low_completion_percent: Decimal = _default(ThresholdKey.LOW_COMPLETION_PERCENT)
     borderline_band_pp: Decimal = _default(ThresholdKey.BORDERLINE_BAND_PP)
     improvement_delta_pp: Decimal = _default(ThresholdKey.IMPROVEMENT_DELTA_PP)
+    cohort_shift_pp: Decimal = _default(ThresholdKey.COHORT_SHIFT_PP)
     min_group_n: Decimal = _default(ThresholdKey.MIN_GROUP_N)
     min_trend_points: Decimal = _default(ThresholdKey.MIN_TREND_POINTS)
     min_consistency_points: Decimal = _default(ThresholdKey.MIN_CONSISTENCY_POINTS)

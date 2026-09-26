@@ -126,6 +126,24 @@ class StudentFindingCode(StrEnum):
 FINDING_VOCABULARY: Final[str] = "student_finding"
 
 
+class ClassFindingCode(StrEnum):
+    """Cohort-level movements that reached the configured magnitude.
+
+    The cohort counterpart of :class:`StudentFindingCode`, and the same kind of statement:
+    what the numbers did, for a whole class, between two assessments. Not a significance
+    test — assessments are not equated for difficulty, so "the mean fell 10 pp" is a fact
+    about the marks and never a claim about the students.
+    """
+
+    CLASS_MEAN_MOVED = "class_mean_moved"
+    PASS_RATE_MOVED = "pass_rate_moved"
+    PARTICIPATION_MOVED = "participation_moved"
+    SPREAD_MOVED = "spread_moved"
+
+
+CLASS_FINDING_VOCABULARY: Final[str] = "class_finding"
+
+
 class InsightCode(StrEnum):
     """The deterministic insight templates. No LLM: one code, one sentence template.
 
@@ -159,6 +177,7 @@ class InsightScope(StrEnum):
 
 
 VOCABULARIES: Final[dict[str, type[StrEnum]]] = {
+    CLASS_FINDING_VOCABULARY: ClassFindingCode,
     FINDING_VOCABULARY: StudentFindingCode,
     TREND_VOCABULARY: TrendLabel,
     SEGMENT_VOCABULARY: SegmentLabel,

@@ -18,10 +18,17 @@ from decimal import Decimal
 import pytest
 from pydantic import BaseModel
 
+from app.modules.analytics.core.class_health import class_health
+from app.modules.analytics.core.comparison import (
+    change_analysis,
+    consecutive_comparisons,
+    latest_published,
+)
 from app.modules.analytics.core.distribution import score_distribution
 from app.modules.analytics.core.outputs import ANALYTICS_CONTRACTS
 from app.modules.analytics.core.policy import build_student_series
 from app.modules.analytics.core.results import Measure, MeasureStatus
+from app.modules.analytics.core.segmentation import cohort_segments, segment_counts
 from app.modules.analytics.core.statistics import assessment_analytics
 from app.modules.analytics.core.student import (
     cohort_histories,
@@ -269,17 +276,28 @@ class TestSeriesShapes:
 # Invariants that must hold everywhere ---------------------------------------------------
 
 
+def cohort_payloads(snapshot: object, thresholds: ThresholdSet) -> list[object]:
+    """Every contract the engine can produce for one offering, class intelligence included."""
+    payloads: list[object] = [
+        assessment_analytics(snapshot, assessment)  # type: ignore[arg-type]
+        for assessment in snapshot.ordered_assessments()  # type: ignore[attr-defined]
+    ]
+    payloads.extend(cohort_histories(snapshot, thresholds))  # type: ignore[arg-type]
+    payloads.extend(cohort_segments(snapshot, thresholds))  # type: ignore[arg-type]
+    payloads.extend(consecutive_comparisons(snapshot))  # type: ignore[arg-type]
+    payloads.append(class_health(snapshot, thresholds))  # type: ignore[arg-type]
+    if latest_published(snapshot) is not None:  # type: ignore[arg-type]
+        payloads.append(change_analysis(snapshot, thresholds))  # type: ignore[arg-type]
+    return payloads
+
+
 class TestInvariantsAcrossEveryScenario:
     @pytest.mark.parametrize("name", sorted(b.SCENARIOS))
     def test_no_scenario_produces_a_non_finite_number(self, name: str) -> None:
         """NaN and infinity must never reach a response, in any shape of data."""
         snapshot = b.SCENARIOS[name]()
         thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
-        payloads = [
-            assessment_analytics(snapshot, assessment)
-            for assessment in snapshot.ordered_assessments()
-        ]
-        payloads.extend(cohort_histories(snapshot, thresholds))
+        payloads = cohort_payloads(snapshot, thresholds)
         for payload in payloads:
             text = payload.model_dump_json()
             assert "NaN" not in text
@@ -291,19 +309,14 @@ class TestInvariantsAcrossEveryScenario:
     def test_every_measure_carries_its_n_and_explains_any_absence(self, name: str) -> None:
         snapshot = b.SCENARIOS[name]()
         thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
-        payloads: list[object] = [
-            assessment_analytics(snapshot, assessment)
-            for assessment in snapshot.ordered_assessments()
-        ]
-        payloads.extend(cohort_histories(snapshot, thresholds))
-        for payload in payloads:
+        for payload in cohort_payloads(snapshot, thresholds):
             for found in measures(payload):
                 assert found.n >= 0
                 if found.status is MeasureStatus.INSUFFICIENT_DATA:
                     assert found.value is None
                     assert found.reason, "an absent value must say why"
 
-    def test_every_contract_this_phase_produces_is_one_of_the_eleven(self) -> None:
+    def test_every_contract_the_engine_produces_is_a_declared_one(self) -> None:
         snapshot = fx.snapshot()
         produced = {
             type(assessment_analytics(snapshot, fx.CT1)),
@@ -311,8 +324,113 @@ class TestInvariantsAcrossEveryScenario:
             type(student_performance_history(snapshot, fx.S1, defaults())),
             type(trend_for(snapshot, fx.S1, defaults())),
             type(student_assessment_performance(snapshot, fx.S1, fx.CT1)),
+            type(class_health(snapshot, defaults())),
+            type(change_analysis(snapshot, defaults())),
+            type(cohort_segments(snapshot, defaults())[0]),
+            type(consecutive_comparisons(snapshot)[0]),
         }
         assert produced <= set(ANALYTICS_CONTRACTS)
+
+
+class TestClassIntelligenceEdgeCases:
+    """The Phase 4 additions to the matrix."""
+
+    def test_an_offering_with_one_assessment_reports_no_change(self) -> None:
+        snapshot = b.build_snapshot({"s1": (60,), "s2": (70,)})
+        analysis = change_analysis(snapshot, defaults())
+        assert analysis.from_assessment is None
+        assert analysis.groups == ()
+        assert analysis.class_mean_change.value is None
+
+    def test_an_offering_with_no_published_assessment_has_no_latest(self) -> None:
+        snapshot = b.build_snapshot({"s1": (60,)}, unpublished=("CT1",))
+        assert latest_published(snapshot) is None
+        assert consecutive_comparisons(snapshot) == ()
+        assert class_health(snapshot, defaults()).latest_assessment is None
+
+    def test_a_cohort_of_one_gets_numbers_and_no_cohort_verdict(self) -> None:
+        snapshot = b.single_student()
+        health = class_health(snapshot, defaults())
+        assert health.cohort_n == 1
+        assert health.class_mean.value == Decimal("74.00")
+        analysis = change_analysis(snapshot, defaults())
+        assert all(f.detected is None for f in analysis.findings), "1 student is below n=5"
+
+    def test_everyone_absent_in_the_latest_assessment(self) -> None:
+        snapshot = b.build_snapshot(
+            {"s1": (60, b.ABSENT), "s2": (70, b.ABSENT), "s3": (50, b.ABSENT)}
+        )
+        analysis = change_analysis(snapshot, defaults())
+        assert analysis.intersection_n == 0
+        assert analysis.class_mean_change.value is None, "nobody sat it: not a fall to zero"
+        assert all(g.count == 0 for g in analysis.groups)
+
+    def test_an_all_exempt_assessment_has_no_participation_denominator(self) -> None:
+        snapshot = b.build_snapshot({"s1": (60, b.EXEMPT), "s2": (70, b.EXEMPT)})
+        comparison = consecutive_comparisons(snapshot)[0]
+        assert comparison.completion_change.status is MeasureStatus.INSUFFICIENT_DATA
+        assert "no denominator" in (comparison.completion_change.reason or "")
+
+    def test_a_student_who_joined_late_is_in_neither_side_of_the_comparison(self) -> None:
+        snapshot = b.build_snapshot({"early": (60, 65), "late": (b.MISSING, 80)})
+        comparison = consecutive_comparisons(snapshot)[0]
+        assert comparison.intersection_n == 1
+        assert comparison.mean_change.value == Decimal("5.00"), "the late joiner cannot move"
+        assert comparison.coverage.missing == 1
+
+    def test_segments_and_counts_survive_every_scenario(self) -> None:
+        for name, build in sorted(b.SCENARIOS.items()):
+            snapshot = build()
+            thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
+            segments = cohort_segments(snapshot, thresholds)
+            counts = segment_counts(segments)
+            assert sum(counts.values()) <= len(segments), name
+
+    def test_class_health_never_claims_attention_was_evaluated(self) -> None:
+        for build in b.SCENARIOS.values():
+            snapshot = build()
+            thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
+            health = class_health(snapshot, thresholds)
+            assert health.students_requiring_attention is None
+            assert health.flag_counts == {}
+
+    def test_every_comparison_carries_the_difficulty_caveat(self) -> None:
+        from app.modules.analytics.core.outputs import DIFFICULTY_CAVEAT
+
+        for build in b.SCENARIOS.values():
+            for comparison in consecutive_comparisons(build()):
+                assert DIFFICULTY_CAVEAT in comparison.explanation.caveats
+
+    def test_every_change_group_count_equals_its_members(self) -> None:
+        for build in b.SCENARIOS.values():
+            snapshot = build()
+            thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
+            if latest_published(snapshot) is None:
+                continue
+            for found in change_analysis(snapshot, thresholds).groups:
+                assert found.count == len(found.students)
+
+    def test_the_result_index_returns_what_a_scan_would(self) -> None:
+        """D-4: the cached index must be indistinguishable from the scan it replaced."""
+        for build in b.SCENARIOS.values():
+            snapshot = build()
+            for student in snapshot.students:
+                for assessment in snapshot.assessments:
+                    expected = next(
+                        (
+                            r
+                            for r in snapshot.results
+                            if r.student_id == student.id and r.assessment_id == assessment.id
+                        ),
+                        None,
+                    )
+                    assert snapshot.result_for(student.id, assessment.id) == expected
+
+    def test_the_index_does_not_break_frozen_semantics(self) -> None:
+        snapshot = fx.snapshot()
+        assert snapshot.result_for(fx.S1, fx.CT1_ID) is not None
+        assert hash(snapshot) == hash(fx.snapshot())
+        assert snapshot == fx.snapshot()
 
 
 def _numbers(payload: object) -> list[float]:
