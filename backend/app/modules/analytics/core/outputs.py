@@ -84,6 +84,17 @@ FORBIDDEN_PHRASES: Final[tuple[str, ...]] = (
     "caused by",
     "because the student",
     "due to lack of",
+    # Phase 6: the vocabulary an intervention report must never reach for. Observing that
+    # marks rose after an action is not the same claim as the action having worked, and
+    # these are the words that quietly turn one into the other.
+    "treatment effect",
+    "causal",
+    "effectiveness",
+    "effective intervention",
+    "ineffective",
+    "proves",
+    "proved",
+    "resulted from",
 )
 """Wording analytics may never emit: prediction, risk scoring, or an invented cause.
 
@@ -1060,8 +1071,12 @@ class InterventionOutcome(_Generated):
 
     intervention_id: uuid.UUID
     offering_id: uuid.UUID
-    baseline_assessments: tuple[AssessmentRef, ...]
-    follow_up_assessment: AssessmentRef
+    baseline_assessments: tuple[AssessmentRef, ...] = ()
+    """Empty only when nothing preceded the intervention, which makes it unmeasurable."""
+
+    follow_up_assessment: AssessmentRef | None = None
+    """``None`` when no assessment has been held since; the outcome is then insufficient."""
+
     target: OutcomeGroup
     peers: OutcomeGroup
     net_change: Measure
@@ -1071,19 +1086,85 @@ class InterventionOutcome(_Generated):
     coverage: DataCoverage
     explanation: Explanation
 
+    @property
+    def is_measured(self) -> bool:
+        """Whether a change was actually reported, as against explained away."""
+        return self.label.is_ok
+
     @model_validator(mode="after")
     def _never_claims_causation(self) -> Self:
         self.explanation.requires(OBSERVATIONAL_CAVEAT, field="InterventionOutcome.explanation")
         _reject_forbidden_wording(
             self.explanation.narrative, field="InterventionOutcome.explanation.narrative"
         )
-        if not self.baseline_assessments:
-            raise ValueError("an outcome needs at least one baseline assessment")
-        if self.follow_up_assessment.id in {a.id for a in self.baseline_assessments}:
+
+        missing_window = not self.baseline_assessments or self.follow_up_assessment is None
+        if missing_window and self.label.is_ok:
+            raise ValueError(
+                "an outcome was labelled without both windows: with nothing before the "
+                "intervention or nothing since, there is no change to report"
+            )
+        if self.follow_up_assessment is not None and self.follow_up_assessment.id in {
+            a.id for a in self.baseline_assessments
+        }:
             raise ValueError(
                 "the follow-up assessment must not also be a baseline assessment: "
                 "comparing an assessment with itself measures nothing"
             )
+        if self.label.is_ok and not self.net_change.is_ok:
+            raise ValueError(
+                "an outcome cannot be labelled from a net change that could not be computed"
+            )
+        return self
+
+
+# ------------------------------------------------ 15. InterventionOutcomeSummary
+
+
+class InterventionOutcomeSummary(_Generated):
+    """**Contract 15.** Descriptive statistics across several interventions.
+
+    Counts and averages of *observed change*. Deliberately not a success rate and not an
+    effectiveness measure: the students who received interventions were chosen **because**
+    they were struggling, so their subsequent change is not comparable with anyone else's in
+    the way such a headline would imply. The field names say what the numbers are —
+    ``improved`` counts interventions whose targeted group's average went up, and nothing
+    more than that.
+    """
+
+    offering_id: uuid.UUID
+    interventions: int = Field(ge=0)
+    measurable: int = Field(ge=0)
+    """How many had both windows populated and both groups above the minimum size."""
+
+    mean_observed_change: Measure
+    median_observed_change: Measure
+    improved: int = Field(ge=0)
+    """Interventions whose targeted group's average rose. Not "successes"."""
+
+    declined: int = Field(ge=0)
+    unchanged: int = Field(ge=0)
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _counts_add_up(self) -> Self:
+        if self.measurable > self.interventions:
+            raise ValueError(
+                f"{self.measurable} measurable outcomes from {self.interventions} interventions"
+            )
+        counted = self.improved + self.declined + self.unchanged
+        if counted != self.measurable:
+            raise ValueError(
+                f"{counted} interventions counted up, down or unchanged, but "
+                f"{self.measurable} are measurable"
+            )
+        self.explanation.requires(
+            OBSERVATIONAL_CAVEAT, field="InterventionOutcomeSummary.explanation"
+        )
+        _reject_forbidden_wording(
+            self.explanation.narrative,
+            field="InterventionOutcomeSummary.explanation.narrative",
+        )
         return self
 
 
@@ -1151,6 +1232,7 @@ ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
     StudentPerformanceProfile,
     AssessmentComparison,
     StudentAttention,
+    InterventionOutcomeSummary,
 )
 """Every analytics response contract: the eleven above, then what later phases compose.
 

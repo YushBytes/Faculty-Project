@@ -126,6 +126,53 @@ class StudentFindingCode(StrEnum):
 FINDING_VOCABULARY: Final[str] = "student_finding"
 
 
+class InterventionKind(StrEnum):
+    """What a faculty member actually did. Deliberately small.
+
+    Six kinds, because an intervention's *type* is not what the measurement turns on — the
+    pre/post windows and the peer comparison are identical whichever it is. A longer list
+    would be a workflow taxonomy nobody analyses, and every extra value is one more thing a
+    report has to render and a teacher has to choose between.
+
+    ``OTHER`` exists so a real action is never forced into the wrong box; the intervention's
+    note says what it was.
+    """
+
+    ACADEMIC_SUPPORT = "academic_support"
+    REMEDIAL_SESSION = "remedial_session"
+    FACULTY_MEETING = "faculty_meeting"
+    PEER_SUPPORT = "peer_support"
+    ADDITIONAL_PRACTICE = "additional_practice"
+    COUNSELLING_REFERRAL = "counselling_referral"
+    OTHER = "other"
+
+
+INTERVENTION_KIND_VOCABULARY: Final[str] = "intervention_kind"
+
+
+class InterventionStatus(StrEnum):
+    """Where an intervention is in its short life.
+
+    Analytics reads this to decide whether an outcome can be measured at all: a cancelled
+    intervention did not happen, so the change after it is not an outcome *of* it, and a
+    planned one has not happened yet. Neither is insufficient data in the usual sense — the
+    data may be perfectly good — so both are reported with their own reason.
+    """
+
+    PLANNED = "planned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+    @property
+    def has_happened(self) -> bool:
+        """Whether the action was actually taken, so a change after it can be reported."""
+        return self in (InterventionStatus.ACTIVE, InterventionStatus.COMPLETED)
+
+
+INTERVENTION_STATUS_VOCABULARY: Final[str] = "intervention_status"
+
+
 class ClassFindingCode(StrEnum):
     """Cohort-level movements that reached the configured magnitude.
 
@@ -178,6 +225,8 @@ class InsightScope(StrEnum):
 
 VOCABULARIES: Final[dict[str, type[StrEnum]]] = {
     CLASS_FINDING_VOCABULARY: ClassFindingCode,
+    INTERVENTION_KIND_VOCABULARY: InterventionKind,
+    INTERVENTION_STATUS_VOCABULARY: InterventionStatus,
     FINDING_VOCABULARY: StudentFindingCode,
     TREND_VOCABULARY: TrendLabel,
     SEGMENT_VOCABULARY: SegmentLabel,

@@ -25,6 +25,14 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.core.types import Code, JsonDecimal, Name, Percent
+from app.modules.analytics.core.results import Measure
+from app.modules.analytics.core.rules import AttentionRuleCode
+from app.modules.analytics.core.thresholds import ResolvedThreshold
+from app.modules.analytics.core.vocabulary import (
+    InterventionKind,
+    InterventionStatus,
+    StudentFindingCode,
+)
 
 AssessmentLabel = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
@@ -205,3 +213,93 @@ class OfferingSnapshot(_Frozen):
     def result_for(self, student_id: uuid.UUID, assessment_id: uuid.UUID) -> ResultRecord | None:
         """The stored result, or ``None`` when no row exists (the derived *missing* state)."""
         return self._result_index.get((student_id, assessment_id))
+
+
+class InterventionReason(_Frozen):
+    """Why an intervention was raised, tied to the evidence that prompted it.
+
+    A free-text note is allowed but is never the only record: where the reason came from the
+    analytics layer it carries the rule or finding code, the value observed at the time and
+    the threshold it was compared against, so a reader a semester later can see what the
+    teacher saw. The value is frozen at the moment of the decision — recomputing the flag
+    later may give a different number, and that is exactly why the original is kept.
+
+    Built from an :class:`~app.modules.analytics.core.outputs.AttentionFlag` by
+    :func:`~app.modules.analytics.core.interventions.reason_from_flag`; the flag itself is
+    not stored here because a flag is derived data with its own lifecycle, and because the
+    contracts layer must not depend on the outputs layer.
+    """
+
+    student_id: uuid.UUID
+    rule_code: AttentionRuleCode | None = None
+    finding: StudentFindingCode | None = None
+    observed: Measure | None = None
+    """The value as it stood when the intervention was raised."""
+
+    threshold: ResolvedThreshold | None = None
+    assessments: tuple[str, ...] = ()
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _says_something(self) -> InterventionReason:
+        if self.rule_code is None and self.finding is None and not self.note:
+            raise ValueError(
+                "a reason must name a rule, a finding or a note; an intervention with no "
+                "stated reason cannot be explained later"
+            )
+        return self
+
+
+class Intervention(_Frozen):
+    """One recorded action a faculty member took for one or more students.
+
+    An *input* to analytics, like a result row: the platform stores it, this layer reads it
+    and measures what happened afterwards. It is not an output and not a workflow engine —
+    there is no assignment, no reminder, no escalation, because none of that is needed to
+    report an observed change.
+
+    **The pre/post boundary is an assessment sequence, not a date.** ``after_sequence_no`` is
+    the sequence number of the last assessment that had already happened when the
+    intervention was raised: everything at or below it is the baseline, the next published
+    assessment is the follow-up. Dates are optional on assessments in this system and
+    ordering never depends on them (see :class:`AssessmentRef`), so a date-based boundary
+    would be unresolvable for real data.
+    :func:`~app.modules.analytics.core.interventions.boundary_from_date` converts a date to
+    a sequence where the data allows it, and refuses where it does not.
+    """
+
+    id: uuid.UUID
+    offering_id: uuid.UUID
+    student_ids: tuple[uuid.UUID, ...] = Field(min_length=1)
+    kind: InterventionKind
+    status: InterventionStatus = InterventionStatus.COMPLETED
+    after_sequence_no: int = Field(ge=0)
+    """The assessment sequence the intervention follows. ``0`` means "before any assessment"."""
+
+    recorded_on: date | None = None
+    """When it was raised, for display and audit. Never used to order assessments."""
+
+    reasons: tuple[InterventionReason, ...] = ()
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _targets_and_reasons_agree(self) -> Intervention:
+        if len(set(self.student_ids)) != len(self.student_ids):
+            raise ValueError("a student is listed twice as a target of this intervention")
+        if not self.reasons and not self.note:
+            raise ValueError(
+                "an intervention must record why it was raised: a reason drawn from the "
+                "analytics layer, or a note"
+            )
+        targets = set(self.student_ids)
+        stray = sorted(str(r.student_id) for r in self.reasons if r.student_id not in targets)
+        if stray:
+            raise ValueError(f"reasons name students who are not targets: {stray}")
+        return self
+
+    @property
+    def targets(self) -> frozenset[uuid.UUID]:
+        return frozenset(self.student_ids)
+
+    def reasons_for(self, student_id: uuid.UUID) -> tuple[InterventionReason, ...]:
+        return tuple(reason for reason in self.reasons if reason.student_id == student_id)

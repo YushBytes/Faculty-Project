@@ -17,7 +17,7 @@ in ``services.py``. That keeps every formula unit testable against hand-computed
 and keeps faculty scope and PII rules enforced in one place (the platform services), not
 duplicated here.
 
-What is in place after Phase 5
+What is in place after Phase 6
 ------------------------------
 
 ``core/contracts.py``   inputs: ``OfferingSnapshot`` and the refs it holds
@@ -36,16 +36,17 @@ What is in place after Phase 5
 ``core/comparison.py``  F15/F16: what moved between two assessments
 ``core/class_health.py`` F19: the offering's KPIs
 ``core/attention.py``   F18: the R1-R7 rule engine (contract 14)
+``core/interventions.py`` F20: observed outcome after an intervention
 ``config.py``           the system-default threshold layer, from settings
 ``schemas.py``          the API surface (re-exports the contracts; no second copy)
 ``services.py``         the ``SnapshotSource`` and ``RecomputeHook`` ports
 ``repository.py``       the platform's stored data, mapped onto ``OfferingSnapshot``
 
-Still to come: ``interventions`` (observed outcome) and ``insights`` (deterministic
-templates), plus the persistence of attention flags and the real ``recompute`` hook, which
-need a database. They are listed in docs/ANALYTICS_SPEC.md with the formula each will
-implement; none is stubbed, because an empty module that returns a plausible value is
-indistinguishable from a working one.
+Still to come: ``insights`` (deterministic templates) and reports, plus the persistence of
+interventions and attention flags and the real ``recompute`` hook, which need a database.
+They are listed in docs/ANALYTICS_SPEC.md with the formula each will implement; none is
+stubbed, because an empty module that returns a plausible value is indistinguishable from a
+working one.
 
 Scope limits that are part of the design, not omissions:
 

@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 5 complete — F1–F19 implemented, attention (F18) included. Flags are computed in memory and aggregated into class health; **they are not persisted yet** and the C4 recompute hook is still the platform's no-op (Phase 5b, when a database is available). Still to come: interventions (F20), insights (F21), reports and the `/analytics/*` API.
+**Status:** Phase 6 complete — F1–F20 implemented. Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: insights (F21), reports and the `/analytics/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -64,7 +64,7 @@ app/modules/analytics/
         trends.py       F9: slope, method, classification; contract 4 [Phase 2]
 ```
 
-**Still to come, one module per formula family:** `interventions` (F20), `insights` (F21).
+**Still to come, one module per formula family:** `insights` (F21).
 
 They are **not stubbed**. An empty module returning a plausible value is indistinguishable from a working one, and the whole point of this layer is that a caller can tell the difference between "no data" and "computed".
 
@@ -209,6 +209,7 @@ All eleven are frozen pydantic models in `core/outputs.py`, reject unknown field
 | 12 | `StudentPerformanceProfile` | how is this student doing over time? | `history`, `latest`/`previous`, `change_from_previous`, `historical_average`, `findings` |
 | 13 | `AssessmentComparison` | how did the same students move between two assessments? | `intersection_n`, the five deltas, both assessments' own analytics |
 | 14 | `StudentAttention` | which rules did this student fire, and does that need acting on? | `flags` (R1→R7), `requires_attention` (derived), `highest_severity` |
+| 15 | `InterventionOutcomeSummary` | what do several interventions look like together? | `measurable`, mean/median observed change, `improved`/`declined`/`unchanged` |
 
 ### The explainability payload
 
@@ -306,7 +307,65 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Where does the attention verdict live? | `StudentAttention`, which **derives** it in a validator | Computing it in callers is how two views of the same student end up disagreeing. |
 | Attention on a student with no data? | Only what is knowable fires — typically R6, since completion of 0% is a fact | A student who sat nothing is not "fine"; nor is their course score zero. |
 
+| Pre/post by date or by sequence? | **Sequence.** A date resolves to one only when every assessment is dated and none falls on the intervention's own day | Dates are optional here and ordering never depends on them; same-day order is unknowable, and guessing moves a result between windows. |
+| One pre value per student, or per observation? | Per **student** — the mean of the baselines they sat | Otherwise a student who sat four papers counts four times against one who sat two. |
+| A new threshold for the outcome label? | No — `cohort_shift_pp` | A net change is a movement of one group against another, which is what that key already governs. |
+| What if an intervention was cancelled? | Insufficient, naming the status | A change measured after an action that did not happen is not an outcome of it — and it is not "no change" either. |
+| Two interventions, same students, same window? | Both reported, both carrying `OVERLAP_CAVEAT` | The change sits after both. Assigning it to one would be an attribution this layer cannot make. |
+| Is the summary a success rate? | No. `improved` counts groups whose average rose | The targeted students were chosen because they were behind; a rate would read as effectiveness, which nothing here can support. |
+
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
+
+### Interventions and observed outcomes (Phase 6)
+
+The ACTION → MEASUREMENT half of the loop. `core/interventions.py` measures what happened after a recorded intervention and **never attributes it**: the targeted students were chosen *because* they were struggling, the groups were not randomised, and nobody was withheld support to make the arithmetic cleaner. Every output carries `OBSERVATIONAL_CAVEAT`, and the contract screens its narrative for causal wording.
+
+#### The record — `Intervention` (an input, in `core/contracts.py`)
+
+| Field | Answers | Note |
+|---|---|---|
+| `student_ids` | **who** | one or more targets, no duplicates |
+| `kind` | **what** | `InterventionKind`: academic support, remedial session, faculty meeting, peer support, additional practice, counselling referral, other |
+| `after_sequence_no` | **when** | the assessment sequence the intervention follows; `0` means before any assessment |
+| `recorded_on` | when, for display | never used to order assessments |
+| `reasons` | **why** | `InterventionReason`: rule code, the value observed *at the time*, the threshold it was compared against, the assessments involved |
+| `status` | planned / active / completed / cancelled | only `active` and `completed` can have an outcome |
+| `note` | free text | allowed, but never the only record of the reason |
+
+`reason_from_flag()` builds a reason from an `AttentionFlag`, freezing what the teacher saw — recomputing the flag later may give a different number, which is exactly why the original is kept.
+
+#### Pre and post — a sequence, not a date
+
+**Pre** is every published assessment at or below `after_sequence_no`. **Post** is the first published assessment after it.
+
+The boundary is a *sequence* because assessment dates are optional in this system and ordering never depends on them (§3). `boundary_from_date()` converts a date to a sequence where the data allows, and **refuses** — returning `None` — when any published assessment has no date, or when an assessment falls on the intervention's own date. Same-day ordering is unknowable, and guessing would silently move a result from one window to the other.
+
+#### The measurement
+
+- A student contributes **one** pre value (the mean of the baselines they were *assessed* in) and **one** post value (their follow-up percentage). A student who sat four baselines does not outweigh one who sat two.
+- Only students assessed in **both** windows are counted; absent, exempt and missing drop out and are reported in `coverage`, never as zeroes. A genuine 0 is a real score and stays in.
+- **Target** = the intervention's students. **Peers** = the rest of the active cohort. Both are gated at `min_outcome_group_n` (3).
+- `change = post_mean − pre_mean` per group; `net_change = target.change − peers.change`, in percentage **points**.
+- The label reads the net change against `cohort_shift_pp` — the same magnitude every other cohort movement is judged by, rather than a new threshold: `target_improved_more`, `target_improved_less`, `no_measurable_difference`.
+
+The peer group is the point. Without it, "the targeted students went up 8 pp" says nothing — the whole class may have gone up 8 pp.
+
+#### Insufficient, and the several ways to be so
+
+| Situation | Reported as |
+|---|---|
+| no assessment since the intervention | insufficient, "nothing yet to measure… not a finding that nothing changed" |
+| nothing before the intervention | insufficient, no baseline to compare against |
+| either group below `min_outcome_group_n` | that group's change insufficient; net and label insufficient |
+| intervention cancelled or still planned | insufficient, naming the status — a change after an action that did not happen is not an outcome of it |
+
+None of these is ever a change of zero.
+
+#### Several interventions
+
+Each is measured in **its own** window; they are never merged. Where two share students *and* a follow-up window, both outcomes carry `OVERLAP_CAVEAT`: the same change sits after both actions, and saying which one it belongs to would be an attribution this layer cannot make.
+
+`outcome_summary()` (contract 15) gives descriptive statistics across several outcomes — how many were measurable, mean and median observed change, and counts up/down/unchanged. Deliberately **not** a success rate and not effectiveness: `improved` counts interventions whose targeted group's average rose, and nothing more.
 
 ### Student performance intelligence (Phase 3)
 
@@ -668,6 +727,41 @@ Canonical RA006 sat one assessment (absent, exempt, then 60%). R4 and R5 need tw
 
 Not the same as the block above with zeroes in it: this build did not run the rules.
 
+### An intervention outcome
+
+Four students given remedial sessions after CT2, against the four who were not.
+
+```json
+{
+  "intervention_id": "…",
+  "baseline_assessments": ["CT1", "CT2"],
+  "follow_up_assessment": "CT3",
+  "target": { "name": "target", "n": 4, "pre_mean": 50.0, "post_mean": 67.0, "change": 17.0 },
+  "peers":  { "name": "peers",  "n": 4, "pre_mean": 70.0, "post_mean": 72.5, "change": 2.5 },
+  "net_change": { "status": "ok", "n": 8, "value": 14.5, "unit": "percentage_points" },
+  "label": { "status": "ok", "value": "target_improved_more", "vocabulary": "intervention_outcome" },
+  "explanation": {
+    "narrative": "Across the 4 targeted students assessed in both windows, the average moved from 50.00% before the intervention (CT1, CT2) to 67.00% in CT3: 17.00 percentage points. The 4 other students assessed in both windows moved from 70.00% to 72.50%: 2.50 percentage points. The observed difference in change is 14.50 percentage points.",
+    "formula": "per student: pre = mean of assessed baselines, post = follow-up percentage; group change = mean(post) - mean(pre); net = target change - peers change",
+    "caveats": ["Observed change only. Students were not randomly assigned and no control was held, so this comparison does not show that the intervention caused the change."]
+  }
+}
+```
+
+*(group means shown flattened; each is a full `Measure` with its `n`.)*
+
+### An outcome that cannot be measured
+
+```json
+{
+  "follow_up_assessment": null,
+  "net_change": { "status": "insufficient_data", "value": null,
+                  "reason": "no published assessment has been held since this intervention" },
+  "label": { "status": "insufficient_data", "value": null },
+  "explanation": { "narrative": "No published assessment has been held since this intervention, so there is nothing yet to measure. This is not a finding that nothing changed." }
+}
+```
+
 ### A generated insight
 
 ```json
@@ -765,7 +859,7 @@ Phase 1 is complete **against the data that exists**. These are needed before th
 | `assessment_results` (nullable `score` + `status`) — D2 | every analytic on real data | not yet migrated |
 | `course_offerings.config` JSONB — D3 | the offering-override layer | `pass_mark_percent` exists; `config` does not, so the layer resolves empty |
 | department `settings` table — D4 | the department layer | does not exist; resolves empty |
-| `interventions`, `intervention_students` — D5 | contract 10 | not yet migrated |
+| `interventions`, `intervention_students` — D5 | persisting interventions; contract 10 computes from them in memory today | not yet migrated |
 | `attention_flags` — D6 | flag persistence and history | not yet migrated |
 | cohort read method — D8 | `SnapshotSource` implementation | Phase 4 |
 | seed dataset with the C11 patterns — D11 | end-to-end verification | not yet delivered |
@@ -788,6 +882,8 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Not in Phase 5, deliberately:** `attention_flags` storage (D6), migration `0007`, and the real C4 `recompute` implementation. They need a database to test the write path and the migration chain, and none is reachable in the current environment — deferred to **Phase 5b**.
 
-**Next — Phase 6 (interventions):** intervention records, target groups, and observed outcome against a peer baseline (F20), with the observational caveat the contract already enforces.
+**Phase 6 delivered:** F20 — the `Intervention` record (who, what, when, why), sequence-based pre/post windows, per-student pairing, target-against-peer observed change, `InterventionOutcomeSummary` (contract 15), and a causal-language screen extended to the vocabulary an intervention report must never reach for. 1,000 pure tests.
 
-**Then:** deterministic insights (F21); reports; the `/analytics/*` routers with `OfferingAccess` scope on every endpoint; and Phase 5b's persistence when PostgreSQL is available.
+**Next — Phase 7 (reporting and export):** CSV, XLSX and PDF built on the same engine, formatting what analytics already computed rather than recomputing anything.
+
+**Then:** deterministic insights (F21); the `/analytics/*` routers with `OfferingAccess` scope on every endpoint; and the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.

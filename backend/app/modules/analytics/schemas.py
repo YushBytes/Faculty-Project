@@ -15,7 +15,13 @@ Request-side models (query filters, intervention payloads) do belong here, and a
 the phase that adds the endpoint that needs them.
 """
 
-from app.modules.analytics.core.contracts import AssessmentRef, ResultStatus, StudentRef
+from app.modules.analytics.core.contracts import (
+    AssessmentRef,
+    Intervention,
+    InterventionReason,
+    ResultStatus,
+    StudentRef,
+)
 from app.modules.analytics.core.outputs import (
     ANALYTICS_CONTRACTS,
     AssessmentAnalytics,
@@ -32,6 +38,7 @@ from app.modules.analytics.core.outputs import (
     ExtremeScore,
     GeneratedInsight,
     InterventionOutcome,
+    InterventionOutcomeSummary,
     OutcomeGroup,
     ScoreDistribution,
     SegmentFactor,
@@ -62,7 +69,10 @@ __all__ = [
     "Explanation",
     "ExtremeScore",
     "GeneratedInsight",
+    "Intervention",
     "InterventionOutcome",
+    "InterventionOutcomeSummary",
+    "InterventionReason",
     "Label",
     "Measure",
     "MeasureStatus",

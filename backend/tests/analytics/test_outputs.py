@@ -575,9 +575,27 @@ class TestInterventionOutcome:
         with pytest.raises(ValidationError, match="must not also be a baseline"):
             self.outcome(baseline_assessments=(baseline,), follow_up_assessment=baseline)
 
-    def test_an_outcome_needs_a_baseline(self) -> None:
-        with pytest.raises(ValidationError, match="at least one baseline"):
+    def test_a_labelled_outcome_needs_both_windows(self) -> None:
+        """Phase 6 widened this: an outcome with no baseline is *expressible*, but only as
+        insufficient data — an intervention with nothing before it is a real state, and the
+        engine has to be able to say so. What stays forbidden is labelling a change that had
+        no window to be measured in.
+        """
+        with pytest.raises(ValidationError, match="without both windows"):
             self.outcome(baseline_assessments=())
+        with pytest.raises(ValidationError, match="without both windows"):
+            self.outcome(follow_up_assessment=None)
+
+    def test_an_unmeasurable_outcome_may_report_no_window(self) -> None:
+        withheld = insufficient_label(
+            vocabulary=OUTCOME_VOCABULARY,
+            n=0,
+            minimum_n=1,
+            reason="no published assessment has been held since this intervention",
+        )
+        built = self.outcome(follow_up_assessment=None, label=withheld)
+        assert built.follow_up_assessment is None
+        assert built.is_measured is False
 
     def test_both_groups_report_their_own_n(self) -> None:
         built = self.outcome()
