@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 6 complete — F1–F20 implemented. Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: insights (F21), reports and the `/analytics/*` API.
+**Status:** Phase 7 complete — F1–F20 implemented, plus reporting and export (CSV, XLSX, PDF). Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: insights (F21) and the `/analytics/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -314,7 +314,100 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Two interventions, same students, same window? | Both reported, both carrying `OVERLAP_CAVEAT` | The change sits after both. Assigning it to one would be an attribution this layer cannot make. |
 | Is the summary a success rate? | No. `improved` counts groups whose average rose | The targeted students were chosen because they were behind; a rate would read as effectiveness, which nothing here can support. |
 
+| Why not a PDF library? | DECISION-4 is open; WeasyPrint is RISK-6 on Windows and ReportLab would settle a product question unilaterally. A ~250-line writer covers a text report with no dependency | The exporter interface is unchanged if DECISION-4 later picks an engine, so nothing is locked in. |
+| One CSV per report, or per table? | One per report, with `# Table` banners; `table_to_csv()` exports a single grid for callers that want one | A faculty member who downloads "the attention report" should get one file, not five. |
+| Percentages in XLSX: `62.40` or `0.624`? | `62.40`, with the unit in the header | So a reader comparing the sheet against the PDF sees the same digits. Excel's percent encoding would show 62.40% but store 0.624, which reads as a different number. |
+| Formulas in the workbook? | None | A formula is a second source of truth; it can disagree with the analytics that produced the figure beside it. |
+| Does report order depend on input order? | Yes, deliberately — cohort order *is* the snapshot's order | The platform returns students by register number, so the report follows it; nothing re-sorts downstream, which is what makes two renderings identical. |
+
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
+
+### Reporting and export (Phase 7)
+
+The last step of the loop: DATA → INSIGHT → ACTION → MEASUREMENT → **REPORT**. Reports format what the engine already computed; they calculate nothing.
+
+```
+analytics contracts  ->  reports/model.Report  ->  csv | xlsx | pdf
+                            (one object)          (three serialisers)
+```
+
+Analytics is computed **once** per report and the three formats serialise the same object, which is why they agree — and why "they agree" is a test rather than a promise.
+
+#### Report types
+
+| Report | Answers | Built from |
+|---|---|---|
+| Class summary | how is this offering doing? | `class_health`, `assessment_analytics` per assessment, segment and attention counts |
+| Student performance | how is this student doing? | `student_profile`, `student_segment`, `cohort_attention`, their interventions |
+| Attention | who needs a teacher's time, and why? | `cohort_attention` — every flag with its evidence |
+| Assessment comparison | what moved between two assessments? | `change_analysis` / `compare_assessments` |
+| Intervention outcome | what was observed after each action? | `intervention_outcomes`, `outcome_summary` |
+
+#### The cell, which is the whole design
+
+A report is sections of tables of cells, and each cell carries three things:
+
+| Part | Purpose |
+|---|---|
+| `text` | the canonical display string — what CSV writes and PDF prints |
+| `number` | the same value as a `Decimal` when there is one, so XLSX stores a real number a spreadsheet can sum. `None` is **not** zero |
+| `note` | *why* there is no number, when there is not — the shortfall analytics already worded |
+
+That shape is what makes an absent result export as `absent` rather than `0`, and an unclassifiable trend export as `insufficient data (only 1 completed assessment (minimum 2))` rather than an empty cell.
+
+#### Missing data, and the three different absences
+
+| State | Exports as |
+|---|---|
+| not evaluated | `not evaluated` — this build did not look |
+| insufficient data | `insufficient data` plus the reason |
+| absent / exempt / missing result | the word (`absent`, `exempt`, `missing`), with "not a score of 0" as the note |
+
+None of these is ever rendered as `0`, blank, `N/A`, "no change" or "passed".
+
+#### Deterministic ordering
+
+Decided in `builders.py` and re-sorted nowhere downstream, so two renderings are byte-identical:
+
+| Thing | Order |
+|---|---|
+| students | the snapshot's cohort order (the platform returns students by register number) |
+| assessments | `sequence_no` |
+| attention flags | student order, then rule code R1 → R7 |
+| interventions | the order the caller supplied |
+| outcomes | intervention order |
+| columns | header order; rows: as built |
+
+Rule order is **determinism, not priority** — flags are never re-sorted by severity, so R1 and R3 (both High) keep their registry order.
+
+#### Export conventions
+
+The project had none, so these are chosen and recorded here:
+
+| Aspect | Choice |
+|---|---|
+| CSV encoding | UTF-8 **with BOM**, so Excel opens non-ASCII names correctly |
+| CSV line endings | `\r\n` (RFC 4180) |
+| CSV structure | one file per report; each table preceded by a `# Table,<name>` banner, metadata and notes as `# ` rows |
+| XLSX | a cover sheet, then one sheet per table; numbers stored as numbers; **no formulas**, since a formula is a second source of truth that can disagree with analytics |
+| Percentages | `62.40%` in text; the bare number `62.40` in a spreadsheet cell (not Excel's `0.624`), so the digits match across formats |
+| Percentage points | signed, `+0.00;-0.00;0.00` — a movement's direction is the point |
+| Dates | ISO-8601 |
+| NaN / Infinity | impossible: rejected by analytics at construction and by `Cell.number` as a pydantic field |
+
+#### PDF, and DECISION-4
+
+DECISION-4 (which PDF engine) is **still open**, and §14 of `PROJECT_CONTEXT.md` gates reports on it. WeasyPrint needs native GTK/Pango and is recorded as RISK-6 for blocking PDF generation outright on a Windows host; ReportLab would mean adding a dependency to a shared `pyproject.toml` and settling an open product question unilaterally.
+
+So `reports/pdf.py` writes the PDF itself — about 250 lines, no dependency. A text-only report needs no library: PDF is a text container and the base-14 fonts (Helvetica) are present in every reader, so nothing is embedded. Output is valid PDF 1.4 with a correct xref table; text is selectable and searchable; long reports paginate.
+
+**This does not pre-empt DECISION-4.** If the project later wants charts or styled layout, `pdf.render()` is replaced and the exporter interface above it does not change — it only ever receives a `Report`.
+
+#### Attention and intervention export safety
+
+Attention exports preserve every flag (a student with three fires appears three times, never collapsed to one "reason"), each with its actual value, threshold, **threshold source**, reference assessments and explanation.
+
+Intervention exports use *observed change*, *target-group change*, *comparison-group change* and *observed difference in change*. The column header is "Observed difference in change"; there is no "effectiveness" column and no success rate. `OBSERVATIONAL_CAVEAT` is printed on the report. A word-boundary test sweeps every export for *treatment effect, causal, effectiveness, ineffective, proves, proved, resulted from, will fail, at risk of failing* — and asserts that the only occurrence of "caused" anywhere is inside the caveat's own denial of causation.
 
 ### Interventions and observed outcomes (Phase 6)
 
@@ -884,6 +977,8 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 6 delivered:** F20 — the `Intervention` record (who, what, when, why), sequence-based pre/post windows, per-student pairing, target-against-peer observed change, `InterventionOutcomeSummary` (contract 15), and a causal-language screen extended to the vocabulary an intervention report must never reach for. 1,000 pure tests.
 
-**Next — Phase 7 (reporting and export):** CSV, XLSX and PDF built on the same engine, formatting what analytics already computed rather than recomputing anything.
+**Phase 7 delivered:** the report model (metadata, sections, typed cells), five report builders, and three exporters — CSV, XLSX and a dependency-free PDF writer. Analytics is computed once per report and serialised three ways, with cross-format agreement asserted by test. 98 report tests, 1,098 pure tests in total.
 
-**Then:** deterministic insights (F21); the `/analytics/*` routers with `OfferingAccess` scope on every endpoint; and the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.
+**Next — Phase 8 (deterministic insights, F21):** template-filled sentences over the outputs above, with every number traceable to the analytics result that produced it and no LLM anywhere near it.
+
+**Then:** the `/analytics/*` and `/reports/*` routers with `OfferingAccess` scope on every endpoint; and the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.
