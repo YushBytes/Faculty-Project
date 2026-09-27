@@ -391,9 +391,35 @@ class TestChangeAnalysis:
             change_analysis(snapshot, defaults())
 
     def test_attention_is_not_pretended_to_have_been_evaluated(self) -> None:
-        analysis = change_analysis(fx.snapshot(), defaults())
+        analysis = change_analysis(fx.snapshot(), defaults(), evaluate_attention=False)
         assert analysis.new_flags == ()
         assert "not evaluated" in analysis.explanation.narrative
+
+    def test_newly_raised_flags_are_reported_when_attention_is_evaluated(self) -> None:
+        """CT2 -> FT1: S3 newly declines (R4, R5) and S5 reaches a run of three (R3).
+
+        S2 is not here: it already held R4 and R5 at CT2, so nothing of theirs is new.
+        """
+        analysis = change_analysis(fx.snapshot(), defaults())
+        assert [f.rule_code.value for f in analysis.new_flags] == [
+            "R4_SHARP_DECLINE",
+            "R5_DECLINING_TREND",
+            "R3_REPEATED_LOW",
+        ]
+        assert {f.student_id for f in analysis.new_flags} == {fx.S3, fx.S5}
+        assert "Newly raised since the previous assessment: 3 flags" in (
+            analysis.explanation.narrative
+        )
+
+    def test_a_flag_that_already_held_is_not_new(self) -> None:
+        analysis = change_analysis(fx.snapshot(), defaults())
+        assert fx.S2 not in {f.student_id for f in analysis.new_flags}
+
+    def test_the_first_assessment_raises_nothing_new(self) -> None:
+        """A flag needs an earlier state to be new against."""
+        snapshot = b.build_snapshot({"s1": (20,), "s2": (30,)})
+        analysis = change_analysis(snapshot, defaults())
+        assert analysis.new_flags == ()
 
     def test_the_narrative_reports_the_movements_and_the_movers(self) -> None:
         narrative = change_analysis(fx.snapshot(), defaults()).explanation.narrative

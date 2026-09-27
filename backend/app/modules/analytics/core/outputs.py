@@ -42,7 +42,12 @@ from app.core.types import JsonDecimal, Percent
 from app.modules.analytics.core.contracts import AssessmentRef, StudentRef
 from app.modules.analytics.core.policy import DerivedState, SeriesPoint
 from app.modules.analytics.core.results import Label, Measure, Unit
-from app.modules.analytics.core.rules import AttentionRuleCode, FlagSeverity, FlagStatus
+from app.modules.analytics.core.rules import (
+    AttentionRuleCode,
+    FlagSeverity,
+    FlagStatus,
+    requires_attention,
+)
 from app.modules.analytics.core.thresholds import ResolvedThreshold
 from app.modules.analytics.core.vocabulary import (
     ChangeDirection,
@@ -703,6 +708,88 @@ class AttentionFlag(_Generated):
         return self
 
 
+SEVERITY_ORDER: Final[tuple[FlagSeverity, ...]] = (
+    FlagSeverity.HIGH,
+    FlagSeverity.MEDIUM,
+    FlagSeverity.LOW,
+)
+"""Loudest first. A display order and a way to name the highest severity present.
+
+Not a priority between *rules*: R1 and R3 are both High, and nothing in contract C9 ranks
+one above the other. Flags themselves are ordered by rule code.
+"""
+
+
+def highest_severity(flags: tuple[AttentionFlag, ...]) -> FlagSeverity | None:
+    """The loudest severity among these flags, or ``None`` when there are none."""
+    present = {flag.severity for flag in flags}
+    return next((severity for severity in SEVERITY_ORDER if severity in present), None)
+
+
+class StudentAttention(_Generated):
+    """**Contract 14.** Every rule one student fired, and whether that amounts to attention.
+
+    The canonical home for the verdict. ``requires_attention`` is validated against
+    :func:`~app.modules.analytics.core.rules.requires_attention` over this student's own
+    severities, so a caller cannot reach a different answer from the same flags — the
+    escalation rule (any High, or two Mediums; Low is informational alone) is applied once,
+    here, and never re-derived downstream.
+
+    All fired rules are kept. A student who is low, failed the latest paper and has been
+    below the mark three times running holds three flags, not one summarised one: each names
+    a different fact, and a teacher acting on it needs all three.
+
+    ``flags`` are ordered by rule code, R1 through R7. That is **determinism, not priority**
+    — it makes two renderings of the same cohort identical and nothing more.
+
+    An empty ``flags`` tuple means *evaluated, and nothing fired*. It never means "not
+    evaluated": that state is the absence of a ``StudentAttention`` altogether, and at class
+    level it is :attr:`ClassHealth.students_requiring_attention` being ``None``.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    flags: tuple[AttentionFlag, ...] = ()
+    requires_attention: bool
+    highest_severity: FlagSeverity | None = None
+    explanation: Explanation
+
+    @property
+    def flag_codes(self) -> tuple[AttentionRuleCode, ...]:
+        return tuple(flag.rule_code for flag in self.flags)
+
+    @model_validator(mode="after")
+    def _verdict_follows_from_the_flags(self) -> Self:
+        codes = [flag.rule_code for flag in self.flags]
+        if len(codes) != len(set(codes)):
+            raise ValueError(
+                f"a rule fired twice for one student: {sorted(c.value for c in codes)}. "
+                "Each rule holds at most one flag per student."
+            )
+        if codes != sorted(codes, key=list(AttentionRuleCode).index):
+            raise ValueError("flags must be ordered by rule code, R1 through R7")
+
+        for flag in self.flags:
+            if flag.student_id != self.student.id:
+                raise ValueError(
+                    f"flag {flag.rule_code.value} belongs to student {flag.student_id}, not "
+                    f"{self.student.id}"
+                )
+            if flag.offering_id != self.offering_id:
+                raise ValueError(f"flag {flag.rule_code.value} belongs to another offering")
+
+        expected = requires_attention(flag.severity for flag in self.flags)
+        if self.requires_attention != expected:
+            raise ValueError(
+                f"requires_attention is {self.requires_attention} but the escalation rule "
+                f"over {[c.value for c in codes]} gives {expected}; the verdict is derived, "
+                "not asserted"
+            )
+        if self.highest_severity != highest_severity(self.flags):
+            raise ValueError("highest_severity disagrees with the flags it describes")
+        return self
+
+
 # --------------------------------------------------------------------------- 5. ClassHealth
 
 
@@ -744,7 +831,16 @@ class ClassHealth(_Generated):
 
     segment_counts: Mapping[SegmentLabel, int] = Field(default_factory=dict)
     flag_counts: Mapping[FlagSeverity, int] = Field(default_factory=dict)
-    """Empty while attention is unevaluated; see ``students_requiring_attention``."""
+    """How many **flags** carry each severity. Empty while attention is unevaluated.
+
+    Flags, not students: one student who is low *and* repeatedly low holds two High flags.
+    ``rule_counts`` and ``students_requiring_attention`` are the student-counting fields.
+    """
+
+    rule_counts: Mapping[AttentionRuleCode, int] = Field(default_factory=dict)
+    """How many **students** fired each rule. A rule holds at most one flag per student, so
+    this counts students and flags alike; it is stated as students because that is what a
+    teacher acts on."""
 
     course_score_distribution: ScoreDistribution | None = None
     """The spread of weighted course scores across the cohort."""
@@ -762,14 +858,27 @@ class ClassHealth(_Generated):
         for name, counts in (
             ("segment_counts", self.segment_counts),
             ("flag_counts", self.flag_counts),
+            ("rule_counts", self.rule_counts),
         ):
             bad = {k: v for k, v in counts.items() if v < 0}
             if bad:
                 raise ValueError(f"{name} has negative entries {bad}")
-        if self.students_requiring_attention is None and self.flag_counts:
+        if self.students_requiring_attention is None and (self.flag_counts or self.rule_counts):
             raise ValueError(
-                "flag counts were reported without evaluating attention; leave both empty "
+                "flag counts were reported without evaluating attention; leave them empty "
                 "rather than implying the flags were counted"
+            )
+        if self.students_requiring_attention is not None:
+            requiring = self.students_requiring_attention
+            if requiring.is_ok and requiring.value is not None and requiring.value > self.cohort_n:
+                raise ValueError(
+                    f"{requiring.value} students require attention in a cohort of {self.cohort_n}"
+                )
+        over = {k: v for k, v in self.rule_counts.items() if v > self.cohort_n}
+        if over:
+            raise ValueError(
+                f"rule counts exceed the cohort of {self.cohort_n}: {over}. A rule holds at "
+                "most one flag per student."
             )
         if sum(self.segment_counts.values()) > self.cohort_n:
             raise ValueError(
@@ -1041,6 +1150,7 @@ ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
     GeneratedInsight,
     StudentPerformanceProfile,
     AssessmentComparison,
+    StudentAttention,
 )
 """Every analytics response contract: the eleven above, then what later phases compose.
 

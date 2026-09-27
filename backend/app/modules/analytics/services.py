@@ -108,8 +108,14 @@ class RecomputeSummary(BaseModel):
 class RecomputeHook(Protocol):
     """Contract C4: re-derive analytics for one assessment, inside the caller's transaction."""
 
-    def __call__(self, session: Session, assessment_id: uuid.UUID) -> RecomputeSummary:
+    def __call__(self, session: Session, assessment_id: uuid.UUID) -> None:
         """Recompute derived rows and attention flags for ``assessment_id``'s offering.
+
+        Returns ``None``, matching the platform's installed type
+        (``app.core.recompute.RecomputeFn``): the write path ignores any value, and agreeing
+        with the signature it is installed against is worth more than a return nobody reads.
+        An implementation that wants the counts computes a :class:`RecomputeSummary`
+        internally and logs or discards it.
 
         Must not commit, must not open its own session, and must be idempotent: calling it
         twice on unchanged data produces the same flags, because Agent 1's import confirm

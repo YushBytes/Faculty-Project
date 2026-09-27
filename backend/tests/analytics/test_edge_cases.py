@@ -386,13 +386,23 @@ class TestClassIntelligenceEdgeCases:
             counts = segment_counts(segments)
             assert sum(counts.values()) <= len(segments), name
 
-    def test_class_health_never_claims_attention_was_evaluated(self) -> None:
+    def test_class_health_never_claims_attention_was_evaluated_when_it_was_not(self) -> None:
         for build in b.SCENARIOS.values():
             snapshot = build()
             thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
-            health = class_health(snapshot, thresholds)
+            health = class_health(snapshot, thresholds, evaluate_attention=False)
             assert health.students_requiring_attention is None
             assert health.flag_counts == {}
+            assert health.rule_counts == {}
+
+    def test_an_evaluated_build_always_reports_a_count_even_when_it_is_zero(self) -> None:
+        for name, build in sorted(b.SCENARIOS.items()):
+            snapshot = build()
+            thresholds = resolve_thresholds(pass_mark_percent=snapshot.pass_mark_percent)
+            health = class_health(snapshot, thresholds)
+            assert health.students_requiring_attention is not None, name
+            assert health.students_requiring_attention.value is not None, name
+            assert health.students_requiring_attention.value <= health.cohort_n, name
 
     def test_every_comparison_carries_the_difficulty_caveat(self) -> None:
         from app.modules.analytics.core.outputs import DIFFICULTY_CAVEAT

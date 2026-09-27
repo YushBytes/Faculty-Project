@@ -10,10 +10,12 @@ The latest paper's own mean lives in ``latest_assessment`` and is usually a diff
 easiest way to make a dashboard quietly wrong, so they are named differently and computed
 from different inputs.
 
-**Attention is not evaluated here.** ``students_requiring_attention`` is ``None`` and
-``flag_counts`` is empty, which the contract defines as "this build did not look" — not "we
-looked and found none", and not insufficient data, which would be a claim about the
-students. The attention engine fills both in a later phase.
+**Attention is evaluated unless the caller says otherwise.** With
+``evaluate_attention=False`` the three attention fields stay ``None``/empty, which the
+contract defines as "this build did not look" — not "we looked and found none", and not
+insufficient data, which would be a claim about the students. With it on, a count of zero
+means exactly what it says: every student was evaluated and none met the escalation rule.
+The two states are different answers and must never collapse into one.
 """
 
 from __future__ import annotations
@@ -22,6 +24,15 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from app.modules.analytics.core.attention import (
+    ATTENTION_NOT_EVALUATED,
+    attention_measure,
+    cohort_attention,
+    flag_counts,
+    flagged_students,
+    rule_counts,
+    students_requiring_attention,
+)
 from app.modules.analytics.core.contracts import OfferingSnapshot, StudentRef
 from app.modules.analytics.core.distribution import distribution_of
 from app.modules.analytics.core.outputs import (
@@ -31,6 +42,7 @@ from app.modules.analytics.core.outputs import (
     DataCoverage,
     EvidenceItem,
     Explanation,
+    StudentAttention,
     StudentPerformanceProfile,
 )
 from app.modules.analytics.core.policy import classify
@@ -45,11 +57,6 @@ from app.modules.analytics.core.statistics import (
     pass_percent,
 )
 from app.modules.analytics.core.thresholds import ThresholdKey, ThresholdSet
-
-ATTENTION_NOT_EVALUATED = (
-    "Attention flags were not evaluated in this build, so no student is reported as "
-    "requiring attention and no flag counts are given. This is not a finding that none do."
-)
 
 COURSE_SCORE_BASIS = "active enrolled students with a weighted course score"
 MATRIX_BASIS = "every (student, published assessment) the active cohort was required to sit"
@@ -111,9 +118,15 @@ def class_health(
     *,
     active_only: bool = True,
     published_only: bool = True,
+    evaluate_attention: bool = True,
     generated_at: datetime | None = None,
 ) -> ClassHealth:
-    """**F19, contract 5.** The offering's KPIs, aggregated from the contracts below it."""
+    """**F19, contract 5.** The offering's KPIs, aggregated from the contracts below it.
+
+    ``evaluate_attention=False`` leaves the three attention fields unevaluated — ``None``
+    and empty — for callers that want the KPIs without running the rule engine. It is not
+    the same as evaluating and finding nobody; see the module docstring.
+    """
     from app.modules.analytics.core.comparison import (
         class_findings,
         compare_assessments,
@@ -163,6 +176,16 @@ def class_health(
     passing = pass_percent(scores, snapshot.pass_mark_percent)
     completion = completion_percent(coverage)
 
+    attentions: tuple[StudentAttention, ...] = ()
+    if evaluate_attention:
+        attentions = cohort_attention(
+            snapshot,
+            thresholds,
+            active_only=active_only,
+            published_only=published_only,
+            generated_at=stamp,
+        )
+
     return ClassHealth(
         generated_at=stamp,
         offering_id=snapshot.offering_id,
@@ -173,9 +196,12 @@ def class_health(
         median=median,
         pass_percent=passing,
         completion_percent=completion,
-        students_requiring_attention=None,
+        students_requiring_attention=(
+            attention_measure(attentions, cohort_n=len(students)) if evaluate_attention else None
+        ),
         segment_counts=counts,
-        flag_counts={},
+        flag_counts=flag_counts(attentions) if evaluate_attention else {},
+        rule_counts=rule_counts(attentions) if evaluate_attention else {},
         course_score_distribution=distribution_of(
             scores,
             offering_id=snapshot.offering_id,
@@ -202,7 +228,33 @@ def class_health(
             coverage=coverage,
             counts=counts,
             findings=findings,
+            attentions=attentions if evaluate_attention else None,
         ),
+    )
+
+
+def _attention_sentence(attentions: Sequence[StudentAttention] | None) -> str:
+    """One sentence about attention: not evaluated, evaluated and empty, or evaluated."""
+    if attentions is None:
+        return ATTENTION_NOT_EVALUATED
+    requiring = students_requiring_attention(attentions)
+    flagged = flagged_students(attentions)
+    if not flagged:
+        return (
+            "Attention was evaluated for every student and no rule fired: none of R1-R7 "
+            "applies to this cohort on the data available."
+        )
+    if not requiring:
+        return (
+            f"Attention was evaluated: {len(flagged)} "
+            f"{'student holds a flag' if len(flagged) == 1 else 'students hold flags'}, and "
+            "none meets the escalation rule of any High rule or two Medium ones."
+        )
+    return (
+        f"Attention was evaluated: {len(requiring)} of {len(flagged)} flagged "
+        f"{'student' if len(flagged) == 1 else 'students'} "
+        f"{'meets' if len(requiring) == 1 else 'meet'} the escalation rule "
+        f"({', '.join(s.register_no for s in requiring)})."
     )
 
 
@@ -219,6 +271,7 @@ def _health_explanation(
     coverage: DataCoverage,
     counts: dict,
     findings: Sequence[ClassFinding],
+    attentions: Sequence[StudentAttention] | None,
 ) -> Explanation:
     minimum = thresholds.count(ThresholdKey.MIN_GROUP_N)
 
@@ -269,7 +322,7 @@ def _health_explanation(
             f"{coverage.absent} absent, {coverage.exempt} exempt, {coverage.missing} with no "
             "result recorded."
         ]
-    sentences.append(ATTENTION_NOT_EVALUATED)
+    sentences.append(_attention_sentence(attentions))
 
     return Explanation(
         narrative=" ".join(sentences),

@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 4 complete — F1–F19 implemented except the R1–R7 attention engine (F18). Student and class intelligence, assessment comparison and "what changed" all run against real stored data. Still to come: attention (F18), interventions (F20), insights (F21), reports and the `/analytics/*` API.
+**Status:** Phase 5 complete — F1–F19 implemented, attention (F18) included. Flags are computed in memory and aggregated into class health; **they are not persisted yet** and the C4 recompute hook is still the platform's no-op (Phase 5b, when a database is available). Still to come: interventions (F20), insights (F21), reports and the `/analytics/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -64,7 +64,7 @@ app/modules/analytics/
         trends.py       F9: slope, method, classification; contract 4 [Phase 2]
 ```
 
-**Still to come, one module per formula family:** `attention` (F18, the R1–R7 engine), `interventions` (F20), `insights` (F21).
+**Still to come, one module per formula family:** `interventions` (F20), `insights` (F21).
 
 They are **not stubbed**. An empty module returning a plausible value is indistinguishable from a working one, and the whole point of this layer is that a caller can tell the difference between "no data" and "computed".
 
@@ -208,6 +208,7 @@ All eleven are frozen pydantic models in `core/outputs.py`, reject unknown field
 | 11 | `GeneratedInsight` | what is the one sentence? | `scope`, `subject_id?`, `code`, `text`, `severity?`, evidence in the explanation |
 | 12 | `StudentPerformanceProfile` | how is this student doing over time? | `history`, `latest`/`previous`, `change_from_previous`, `historical_average`, `findings` |
 | 13 | `AssessmentComparison` | how did the same students move between two assessments? | `intersection_n`, the five deltas, both assessments' own analytics |
+| 14 | `StudentAttention` | which rules did this student fire, and does that need acting on? | `flags` (R1→R7), `requires_attention` (derived), `highest_severity` |
 
 ### The explainability payload
 
@@ -298,6 +299,12 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Are attention counts insufficient data? | No — `None`/empty, meaning "not evaluated" | "We did not look" and "we looked and the data was thin" are different statements, and only the second is about the students. |
 | Does the borderline band overlap the low band? | With a pass mark of 40 and a low threshold of 50, yes: every borderline student is also persistently low, so borderline is never primary. At the platform's default pass mark of 50 they separate | A consequence of configuration, not of code; pinned by a test so it stays visible. |
 | Snapshot result lookup | `OfferingSnapshot.result_for` is backed by a `functools.cached_property` index | It was a linear scan called `n × m` times over `n × m` rows; a 300 × 10 cohort now builds in ~33 ms. Frozen, hashable and equality semantics are unchanged, and the index is never serialised. |
+
+| Is R1 strict or inclusive? | **Strict** (`<`), per C9's "below" — while F17's Persistently Low is inclusive (`<=`) on the same threshold | Both are explicitly specified. A score of exactly the threshold is segmented low and unflagged; a test pins the difference. |
+| What does `flag_counts` count? | **Flags**, by severity. `rule_counts` counts **students** | 3 High flags held by 2 students are both true and different numbers; a dashboard needs to know which it is showing. |
+| Do overlapping rules collapse? | No. Every fired rule is kept, ordered R1→R7 | Each names a different fact. The ordering is determinism, not priority — C9 ranks no rule above another. |
+| Where does the attention verdict live? | `StudentAttention`, which **derives** it in a validator | Computing it in callers is how two views of the same student end up disagreeing. |
+| Attention on a student with no data? | Only what is knowable fires — typically R6, since completion of 0% is a fact | A student who sat nothing is not "fine"; nor is their course score zero. |
 
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
 
@@ -431,6 +438,51 @@ These codes are canonical and **must not be renumbered**: the blueprint used the
 
 **Requires academic attention** when any High rule fires, or at least two Medium rules fire. Low rules are informational alone: being borderline is worth showing a teacher, but it is not by itself a call to act.
 
+### How each rule is evaluated (Phase 5)
+
+`core/attention.py` evaluates the registry; it computes nothing of its own. Each rule reads the Phase 2/3 fact that owns the number, and a test asserts the flag's `actual` **is** that measure.
+
+| Rule | Fires when | Fact it reads |
+|---|---|---|
+| R1 | `W < low_performance_percent` | `student.weighted_course_score` |
+| R2 | latest completed `P < pass_mark` | `series.latest_assessed` |
+| R3 | trailing run `>= repeated_low_count` | `student.repeated_low_run` |
+| R4 | `drop <= -decline_drop_pp` | `student.decline_against_earlier_mean` |
+| R5 | trend classified Declining | `trends.student_trend` |
+| R6 | `completion < low_completion_percent` | `student.completion_percent` |
+| R7 | `|W - pass_mark| <= borderline_band_pp` | `student.pass_mark_distance` |
+
+**A rule whose fact is insufficient data does not fire.** It returns nothing — not a flag, and not a "passed" verdict. The contract refuses a flag whose `actual` could not be computed.
+
+**Boundary note, deliberate:** R1 is **strict** (`<`) because C9 says "below", while the Persistently Low *segment* (F17) is **inclusive** (`<=`) on the same threshold. A weighted course score of exactly `low_performance_percent` is therefore segmented low and unflagged. Both are as specified; a test pins the disagreement so it is not "tidied up".
+
+**R3 never fires alone.** A trailing run below the pass mark means the latest completed assessment is below it, so R2 always accompanies R3. That follows from the definitions, not from the implementation.
+
+### Overlapping flags, and what gets counted
+
+Every fired rule is kept — a student who is low, failed the latest paper and has been below the mark three times running holds three flags, and each names a different fact. `StudentAttention` (contract 14) is the canonical home for one student's flags plus the verdict, and the contract **derives** `requires_attention` from the severities rather than accepting it, so no caller can reach a different answer.
+
+Flags are ordered R1 → R7. That is **determinism, not priority**: nothing in C9 ranks one rule above another.
+
+| Count | Over | Field |
+|---|---|---|
+| `flag_counts` | **flags**, by severity | `ClassHealth.flag_counts` |
+| `rule_counts` | **students**, by rule (a rule holds at most one flag per student) | `ClassHealth.rule_counts` |
+| students requiring attention | **students** meeting the escalation rule | `ClassHealth.students_requiring_attention` |
+
+The canonical cohort makes the distinction concrete: **11 flags across 6 students, of whom 2 require attention**, with 3 High *flags* held by 2 *students*.
+
+### Evaluated, versus not evaluated
+
+`class_health()` and `change_analysis()` take `evaluate_attention` (default `True`).
+
+| State | Looks like | Means |
+|---|---|---|
+| not evaluated | `students_requiring_attention` is `None`, counts empty | this build did not run the rules |
+| evaluated, nobody | `students_requiring_attention.value == 0` with its `n`, counts empty | every student was put to the rules and none escalated |
+
+These must never collapse into one. The second is a finding about the cohort; the first is a statement about the build.
+
 Message style — state the value, the threshold and the assessments; never predict, never invent a cause:
 
 > Latest assessment 42%. Configured low-performance threshold 50%. Below 50% in 3 consecutive assessments (CT1 46%, CT2 48%, FT1 42%).
@@ -531,6 +583,90 @@ Emitted by `trends.trend_for()` for student S2 of the canonical fixture (80, 60,
   "message": "Below the 40% pass mark in 3 consecutive assessments (CT1 38%, CT2 36%, FT1 34%). Configured threshold: 3 consecutive assessments."
 }
 ```
+
+### An attention flag (R1), and the student who holds it
+
+One flag, from `attention.cohort_attention()` for canonical student RA004 (course score 41.00%).
+
+```json
+{
+  "rule_code": "R1_LOW_PERFORMANCE",
+  "severity": "high",
+  "status": "open",
+  "actual": { "status": "ok", "n": 3, "minimum_n": 1, "reason": null,
+              "value": 41.0, "unit": "percent" },
+  "threshold": { "key": "low_performance_percent", "value": 50.0, "source": "system_default" },
+  "pass_mark_percent": null,
+  "reference_assessments": ["CT1", "CT2", "FT1"],
+  "message": "Weighted course score 41.00% across 3 completed assessments (CT1, CT2, FT1). Configured low-performance threshold 50%.",
+  "explanation": {
+    "formula": "W = sum(P_a * w_a) / sum(w_a) over completed assessments; W < threshold",
+    "evidence": [
+      { "name": "CT1", "value": "42.00", "unit": "percent" },
+      { "name": "CT2", "value": "40.00", "unit": "percent" },
+      { "name": "FT1", "value": "41.00", "unit": "percent" }
+    ],
+    "thresholds": [{ "key": "low_performance_percent", "value": 50.0, "source": "system_default" }],
+    "assessments_used": ["CT1", "CT2", "FT1"]
+  }
+}
+```
+
+### A student holding several flags (RA005)
+
+```json
+{
+  "flags": ["R1_LOW_PERFORMANCE", "R2_FAILED_LATEST", "R3_REPEATED_LOW"],
+  "requires_attention": true,
+  "highest_severity": "high",
+  "explanation": {
+    "narrative": "3 rules fired: R1_LOW_PERFORMANCE (high), R2_FAILED_LATEST (medium), R3_REPEATED_LOW (high). That meets the escalation rule - any High rule, or two Medium ones - so this student is listed as requiring academic attention."
+  }
+}
+```
+
+*(`flags` is shown by code here; each is a full `AttentionFlag` like the one above.)*
+
+### A student with nothing to report (RA001)
+
+```json
+{
+  "flags": [],
+  "requires_attention": false,
+  "highest_severity": null,
+  "explanation": {
+    "narrative": "No attention rule fired for this student. Every rule was put to the data available; where a rule needed more completed assessments than this student has, it was left unjudged rather than counted as passing."
+  }
+}
+```
+
+### Insufficient data for a rule
+
+Canonical RA006 sat one assessment (absent, exempt, then 60%). R4 and R5 need two completed assessments, so neither is judged — and neither appears as a passed rule. Only R6 fires, on a completion of 50.00% that *is* knowable:
+
+```json
+{ "flags": ["R6_LOW_COMPLETION"], "requires_attention": false, "highest_severity": "medium" }
+```
+
+### Class-level counts, evaluated
+
+```json
+{
+  "students_requiring_attention": { "status": "ok", "n": 7, "value": 2, "unit": "count" },
+  "flag_counts": { "high": 3, "medium": 5, "low": 3 },
+  "rule_counts": { "R1_LOW_PERFORMANCE": 2, "R2_FAILED_LATEST": 1, "R3_REPEATED_LOW": 1,
+                   "R4_SHARP_DECLINE": 2, "R5_DECLINING_TREND": 2, "R6_LOW_COMPLETION": 2,
+                   "R7_BORDERLINE": 1 }
+}
+```
+
+### Class-level, attention not evaluated
+
+```json
+{ "students_requiring_attention": null, "flag_counts": {}, "rule_counts": {} }
+```
+
+Not the same as the block above with zeroes in it: this build did not run the rules.
 
 ### A generated insight
 
@@ -648,6 +784,10 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 4 delivered:** F15 (`AssessmentComparison`, contract 13), F16 (`ChangeAnalysis`, contract 9), F17 (`StudentSegment`, contract 7) and F19 (`ClassHealth`, contract 5); `ClassFinding` for cohort movement; one new threshold, `cohort_shift_pp`; and a cached result index behind `OfferingSnapshot.result_for`. 783 pure tests.
 
-**Next — Phase 5 (attention):** the R1–R7 engine (F18), the flag lifecycle, `attention_flags` storage with its own migration, and the `recompute` hook it fills (C4). It completes `ClassHealth.students_requiring_attention` and `ChangeAnalysis.new_flags`, both of which currently report "not evaluated".
+**Phase 5 delivered:** F18 — the R1–R7 engine over the Phase 2/3 facts, `StudentAttention` (contract 14) with a derived verdict, cohort counts (flags by severity, students by rule, students requiring attention), `ClassHealth` and `ChangeAnalysis` integration behind `evaluate_attention`, and the evaluated-versus-not-evaluated distinction. 924 pure tests.
 
-**Then:** interventions and observed outcomes (F20); deterministic insights (F21); reports; then the `/analytics/*` routers with `OfferingAccess` scope on every endpoint.
+**Not in Phase 5, deliberately:** `attention_flags` storage (D6), migration `0007`, and the real C4 `recompute` implementation. They need a database to test the write path and the migration chain, and none is reachable in the current environment — deferred to **Phase 5b**.
+
+**Next — Phase 6 (interventions):** intervention records, target groups, and observed outcome against a peer baseline (F20), with the observational caveat the contract already enforces.
+
+**Then:** deterministic insights (F21); reports; the `/analytics/*` routers with `OfferingAccess` scope on every endpoint; and Phase 5b's persistence when PostgreSQL is available.

@@ -29,7 +29,7 @@ from app.modules.analytics.core.class_health import (
 from app.modules.analytics.core.outputs import ClassHealth, DataCoverage
 from app.modules.analytics.core.profile import cohort_profiles
 from app.modules.analytics.core.results import MeasureStatus
-from app.modules.analytics.core.rules import FlagSeverity
+from app.modules.analytics.core.rules import AttentionRuleCode, FlagSeverity
 from app.modules.analytics.core.statistics import assessment_analytics
 from app.modules.analytics.core.thresholds import ThresholdKey, ThresholdSet, resolve_thresholds
 from app.modules.analytics.core.vocabulary import ClassFindingCode, SegmentLabel
@@ -43,7 +43,15 @@ def defaults(pass_mark: str = "40.00") -> ThresholdSet:
 
 def health(snapshot: object | None = None) -> ClassHealth:
     used = snapshot or fx.snapshot()
-    return class_health(used, resolve_thresholds(pass_mark_percent=used.pass_mark_percent))  # type: ignore[arg-type]
+    thresholds = resolve_thresholds(pass_mark_percent=used.pass_mark_percent)  # type: ignore[attr-defined]
+    return class_health(used, thresholds)  # type: ignore[arg-type]
+
+
+def unevaluated(snapshot: object | None = None) -> ClassHealth:
+    """Class health with the attention engine deliberately not run."""
+    used = snapshot or fx.snapshot()
+    thresholds = resolve_thresholds(pass_mark_percent=used.pass_mark_percent)  # type: ignore[attr-defined]
+    return class_health(used, thresholds, evaluate_attention=False)  # type: ignore[arg-type]
 
 
 class TestCanonicalKpis:
@@ -150,17 +158,72 @@ class TestSegmentsAndAttention:
         assert "1 student could not be segmented" in built.explanation.narrative
 
     def test_attention_is_reported_as_not_evaluated_rather_than_as_none_needed(self) -> None:
-        """D-1: "we did not look" is not "we looked and found nobody"."""
-        built = health()
+        """ "We did not look" is not "we looked and found nobody"."""
+        built = unevaluated()
         assert built.students_requiring_attention is None
         assert built.flag_counts == {}
+        assert built.rule_counts == {}
         assert "not evaluated" in built.explanation.narrative
         assert "not a finding that none do" in built.explanation.narrative
 
+    def test_evaluated_and_zero_is_a_different_answer_from_not_evaluated(self) -> None:
+        """The distinction Phase 5 exists to preserve, asserted side by side.
+
+        A cohort where nobody fires a rule reports a *count of zero*, over a stated ``n``.
+        A build that did not evaluate reports ``None``. Collapsing the two would turn "we
+        did not look" into "all is well".
+        """
+        clean = b.build_snapshot({"s1": (80, 82, 85), "s2": (78, 80, 84)})
+        evaluated = health(clean)
+        assert evaluated.students_requiring_attention is not None
+        assert evaluated.students_requiring_attention.value == Decimal(0)
+        assert evaluated.students_requiring_attention.n == 2
+        assert evaluated.flag_counts == {}
+        assert "no rule fired" in evaluated.explanation.narrative
+
+        assert unevaluated(clean).students_requiring_attention is None
+
     def test_flag_counts_cannot_be_reported_without_evaluating_attention(self) -> None:
-        fields = health().model_dump()
+        fields = unevaluated().model_dump()
         with pytest.raises(ValidationError, match="without evaluating attention"):
             ClassHealth(**{**fields, "flag_counts": {FlagSeverity.HIGH: 2}})
+
+    def test_rule_counts_cannot_be_reported_without_evaluating_attention(self) -> None:
+        fields = unevaluated().model_dump()
+        with pytest.raises(ValidationError, match="without evaluating attention"):
+            ClassHealth(**{**fields, "rule_counts": {AttentionRuleCode.R1_LOW_PERFORMANCE: 1}})
+
+    def test_the_canonical_attention_counts(self) -> None:
+        """11 flags over 6 students, 2 of whom meet the escalation rule."""
+        built = health()
+        assert built.students_requiring_attention is not None
+        assert built.students_requiring_attention.value == Decimal(2)
+        assert built.students_requiring_attention.n == 7, "over the cohort"
+        assert {k.value: v for k, v in built.flag_counts.items()} == {
+            "high": 3,
+            "medium": 5,
+            "low": 3,
+        }
+        assert sum(built.flag_counts.values()) == 11
+        assert {k.value: v for k, v in built.rule_counts.items()} == {
+            "R1_LOW_PERFORMANCE": 2,
+            "R2_FAILED_LATEST": 1,
+            "R3_REPEATED_LOW": 1,
+            "R4_SHARP_DECLINE": 2,
+            "R5_DECLINING_TREND": 2,
+            "R6_LOW_COMPLETION": 2,
+            "R7_BORDERLINE": 1,
+        }
+
+    def test_a_rule_count_cannot_exceed_the_cohort(self) -> None:
+        fields = health().model_dump()
+        with pytest.raises(ValidationError, match="exceed the cohort"):
+            ClassHealth(**{**fields, "rule_counts": {AttentionRuleCode.R1_LOW_PERFORMANCE: 99}})
+
+    def test_the_narrative_names_the_students_requiring_attention(self) -> None:
+        narrative = health().explanation.narrative
+        assert "2 of 6 flagged students meet the escalation rule" in narrative
+        assert "RA004" in narrative and "RA005" in narrative
 
     def test_segment_counts_cannot_exceed_the_cohort(self) -> None:
         fields = health().model_dump()

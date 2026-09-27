@@ -29,10 +29,15 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from app.modules.analytics.core.attention import (
+    ATTENTION_NOT_EVALUATED,
+    new_flags_between,
+)
 from app.modules.analytics.core.contracts import AssessmentRef, OfferingSnapshot, StudentRef
 from app.modules.analytics.core.outputs import (
     DIFFICULTY_CAVEAT,
     AssessmentComparison,
+    AttentionFlag,
     ChangeAnalysis,
     ChangeGroup,
     ClassFinding,
@@ -63,12 +68,6 @@ from app.modules.analytics.core.thresholds import ThresholdKey, ThresholdSet
 from app.modules.analytics.core.vocabulary import ChangeDirection, ClassFindingCode
 
 PAIRED_NOUN = "student assessed in both"
-
-ATTENTION_NOT_EVALUATED = (
-    "Attention flags were not evaluated in this analysis, so no flag counts are reported. "
-    "An empty list here does not mean no student needs attention."
-)
-"""Said out loud rather than implied by an empty tuple; see ``ChangeAnalysis.new_flags``."""
 
 
 class PairedResult(tuple[StudentRef, Decimal, Decimal]):
@@ -603,13 +602,18 @@ def change_analysis(
     *,
     to_assessment: AssessmentRef | None = None,
     active_only: bool = True,
+    evaluate_attention: bool = True,
     generated_at: datetime | None = None,
 ) -> ChangeAnalysis:
     """**F16, contract 9.** What the latest assessment changed, against the state before it.
 
     The first assessment of an offering changes nothing — there is no earlier state to
     compare with, which is not the same as a change of zero — so every movement comes back
-    as insufficient data with that reason, and no group is reported.
+    as insufficient data with that reason, no group is reported, and no flag is called new:
+    a flag needs an earlier state to be new against.
+
+    ``evaluate_attention=False`` leaves ``new_flags`` empty and says so, for callers that
+    want the movement without running the rule engine.
     """
     stamp = generated_at or datetime.now(UTC)
     target = to_assessment or latest_published(snapshot)
@@ -658,6 +662,16 @@ def change_analysis(
     )
     groups = change_groups(snapshot, previous, target, thresholds, active_only=active_only)
     findings = class_findings(comparison, thresholds)
+    new_flags: tuple[AttentionFlag, ...] = ()
+    if evaluate_attention:
+        new_flags = new_flags_between(
+            snapshot,
+            previous.sequence_no,
+            target.sequence_no,
+            thresholds,
+            active_only=active_only,
+            generated_at=stamp,
+        )
 
     return ChangeAnalysis(
         generated_at=stamp,
@@ -670,9 +684,30 @@ def change_analysis(
         groups=groups,
         comparison=comparison,
         findings=findings,
-        new_flags=(),
+        new_flags=new_flags,
         coverage=comparison.coverage,
-        explanation=_change_explanation(comparison=comparison, groups=groups, findings=findings),
+        explanation=_change_explanation(
+            comparison=comparison,
+            groups=groups,
+            findings=findings,
+            new_flags=new_flags if evaluate_attention else None,
+        ),
+    )
+
+
+def _new_flag_sentence(new_flags: Sequence[AttentionFlag] | None) -> str:
+    """One sentence about newly raised flags: not evaluated, none, or which ones."""
+    if new_flags is None:
+        return ATTENTION_NOT_EVALUATED
+    if not new_flags:
+        return "No attention rule fired for a student it had not already fired for."
+    counted: dict[str, int] = {}
+    for flag in new_flags:
+        counted[flag.rule_code.value] = counted.get(flag.rule_code.value, 0) + 1
+    listed = ", ".join(f"{code} x{count}" for code, count in counted.items())
+    return (
+        f"Newly raised since the previous assessment: {len(new_flags)} "
+        f"{'flag' if len(new_flags) == 1 else 'flags'} ({listed})."
     )
 
 
@@ -681,6 +716,7 @@ def _change_explanation(
     comparison: AssessmentComparison,
     groups: Sequence[ChangeGroup],
     findings: Sequence[ClassFinding],
+    new_flags: Sequence[AttentionFlag] | None,
 ) -> Explanation:
     moved = [
         f"{f.code.value} ({f.direction.value})"
@@ -703,7 +739,7 @@ def _change_explanation(
         )
     else:
         sentences.append("No student crossed the pass mark or moved by the configured margin.")
-    sentences.append(ATTENTION_NOT_EVALUATED)
+    sentences.append(_new_flag_sentence(new_flags))
 
     return Explanation(
         narrative=" ".join(sentences),

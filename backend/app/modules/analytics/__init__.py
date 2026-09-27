@@ -17,7 +17,7 @@ in ``services.py``. That keeps every formula unit testable against hand-computed
 and keeps faculty scope and PII rules enforced in one place (the platform services), not
 duplicated here.
 
-What is in place after Phase 3
+What is in place after Phase 5
 ------------------------------
 
 ``core/contracts.py``   inputs: ``OfferingSnapshot`` and the refs it holds
@@ -32,17 +32,20 @@ What is in place after Phase 3
 ``core/student.py``     F2, F7, F10-F13: course score, completion, consistency, decline
 ``core/trends.py``      F9: slope, method and classification
 ``core/profile.py``     composition: one student, read as a whole (contract 12)
+``core/segmentation.py`` F17: which segment a student is in
+``core/comparison.py``  F15/F16: what moved between two assessments
+``core/class_health.py`` F19: the offering's KPIs
+``core/attention.py``   F18: the R1-R7 rule engine (contract 14)
 ``config.py``           the system-default threshold layer, from settings
 ``schemas.py``          the API surface (re-exports the contracts; no second copy)
 ``services.py``         the ``SnapshotSource`` and ``RecomputeHook`` ports
 ``repository.py``       the platform's stored data, mapped onto ``OfferingSnapshot``
 
-Still to come, each a pure function set over a snapshot returning the contracts above:
-``segmentation``, ``attention`` (the R1-R7 engine), ``class_health``, ``comparison`` ("what
-changed"), ``interventions`` (observed outcome) and ``insights`` (deterministic templates).
-They are listed in docs/ANALYTICS_SPEC.md with the formula each will implement; none is
-stubbed, because an empty module that returns a plausible value is indistinguishable from a
-working one.
+Still to come: ``interventions`` (observed outcome) and ``insights`` (deterministic
+templates), plus the persistence of attention flags and the real ``recompute`` hook, which
+need a database. They are listed in docs/ANALYTICS_SPEC.md with the formula each will
+implement; none is stubbed, because an empty module that returns a plausible value is
+indistinguishable from a working one.
 
 Scope limits that are part of the design, not omissions:
 
