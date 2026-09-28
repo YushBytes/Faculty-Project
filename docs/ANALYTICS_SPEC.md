@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 7 complete — F1–F20 implemented, plus reporting and export (CSV, XLSX, PDF). Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: insights (F21) and the `/analytics/*` API.
+**Status:** Phase 8 complete — **F1–F21 implemented**, plus reporting and export (CSV, XLSX, PDF). Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: the `/analytics/*` and `/reports/*` API.
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -63,8 +63,6 @@ app/modules/analytics/
         student.py      F2, F7, F10-F13, and contracts 2 and 3        [Phase 2]
         trends.py       F9: slope, method, classification; contract 4 [Phase 2]
 ```
-
-**Still to come, one module per formula family:** `insights` (F21).
 
 They are **not stubbed**. An empty module returning a plausible value is indistinguishable from a working one, and the whole point of this layer is that a caller can tell the difference between "no data" and "computed".
 
@@ -210,6 +208,7 @@ All eleven are frozen pydantic models in `core/outputs.py`, reject unknown field
 | 13 | `AssessmentComparison` | how did the same students move between two assessments? | `intersection_n`, the five deltas, both assessments' own analytics |
 | 14 | `StudentAttention` | which rules did this student fire, and does that need acting on? | `flags` (R1→R7), `requires_attention` (derived), `highest_severity` |
 | 15 | `InterventionOutcomeSummary` | what do several interventions look like together? | `measurable`, mean/median observed change, `improved`/`declined`/`unchanged` |
+| 11 | `GeneratedInsight` *(filled in Phase 8)* | what is the one sentence? | `code`, `scope`, `subject_id?`, `text`, evidence and threshold provenance |
 
 ### The explainability payload
 
@@ -320,7 +319,85 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Formulas in the workbook? | None | A formula is a second source of truth; it can disagree with the analytics that produced the figure beside it. |
 | Does report order depend on input order? | Yes, deliberately — cohort order *is* the snapshot's order | The platform returns students by register number, so the report follows it; nothing re-sorts downstream, which is what makes two renderings identical. |
 
+| Do insights get a severity? | No — left unset | The contract allows one, but attaching it would invite ranking findings by it, and that ordering is a judgement for the person who knows the students. |
+| Are cluster counts recomputed? | No — they are `rule_counts` from the attention engine | A second loop over students applying R3–R7 would be a second implementation of the same rules, free to drift from the first. |
+| Segment *transitions* ("3 moved from Declining to Stable")? | **Not implemented** | Segmentation computes from the current series; a historical segment is derivable but not exposed by any contract, and §19 says not to invent transitions the data does not carry. |
+| Why did the causal screen need fixing? | It matched substrings, so "proved" fired inside "improved" | The system says "improved" constantly and legitimately. Whole-word matching keeps every real claim rejected without banning honest wording. |
+
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
+
+### Deterministic insights (Phase 8, F21)
+
+The analytics, said in sentences. One code, one template, one set of numbers — **no language model, no scoring, no ranking**. Each rule is an `if` over a fact the engine already produced, so running it twice on the same snapshot gives the same words in the same order.
+
+```
+existing analytics  ->  insight rules  ->  GeneratedInsight (contract 11)
+```
+
+#### Nothing is recalculated
+
+| Insight | The fact behind it |
+|---|---|
+| class mean / pass rate moved | `ChangeAnalysis` and its `AssessmentComparison` |
+| completion moved | `AssessmentComparison.completion_change` |
+| decline, declining-trend, repeated-low, low-completion and borderline clusters | `rule_counts` from the attention engine — R3–R7 already evaluated, with their thresholds |
+| improvement cluster | `ChangeAnalysis.groups` |
+| attention summary | `cohort_attention` counts |
+| distribution peak | `ClassHealth.course_score_distribution` |
+| student insights | `StudentPerformanceProfile` and its findings |
+| intervention | `InterventionOutcome` |
+
+The clusters are the clearest case: "2 students had a decline of at least 15 percentage points" **is** R4's count, with R4's threshold, evaluated once. A fresh loop over students here would be a second implementation of the same rule, free to disagree with the first.
+
+#### Codes
+
+The eleven `InsightCode` members frozen in Phase 1 are reused unchanged. Eight were added for facts none of them named:
+
+| Added | Why |
+|---|---|
+| `CLASS_COMPLETION_MOVED` | participation between two assessments |
+| `DECLINING_TREND_CLUSTER`, `REPEATED_LOW_CLUSTER`, `IMPROVEMENT_CLUSTER` | cohort groups the brief asks for; the existing `STUDENT_*` codes are student-scoped |
+| `DISTRIBUTION_PEAK` | the largest band |
+| `STUDENT_LATEST_CHANGE`, `STUDENT_COMPLETION_LOW`, `STUDENT_BORDERLINE` | student-level "what changed" facts |
+
+Every code has a category (`INSIGHT_CATEGORY`) and a place in `INSIGHT_ORDER`; a test asserts both mappings are total, so a new code cannot be added without deciding where it belongs.
+
+#### Ordering, and why it is not a ranking
+
+Insights are emitted in `INSIGHT_ORDER` — cohort performance, then participation, then movement, then attention, then the shape of the cohort, then one student, then actions taken. **This is presentation order, not priority.** It says nothing about which finding matters most; that is a judgement for the person reading, who knows the students. Nothing is sorted by severity, and `severity` is deliberately left unset on generated insights so nothing downstream is tempted to rank by it.
+
+#### Duplicate suppression
+
+One insight per `(code, subject_id)`. A fact reached by two paths is one fact; two *different* facts are two insights, so a falling class mean and a falling pass rate both survive. Two students with the same code both survive, because their subjects differ.
+
+#### Insufficient data, and the zero that is not
+
+The distinction this layer is most at risk of blurring:
+
+| Situation | Result |
+|---|---|
+| one assessment, so no comparison | **no insight** — never "the class average was stable" |
+| no students assessed in both | no insight |
+| a rule nobody fired | no insight — never "0 students declined" |
+| no attention flags at all | no insight — §15 forbids a manufactured warning, and an all-clear is a stronger claim than this layer should make |
+| a tie for the largest distribution band | no insight — naming one of two would be a choice the data does not make |
+| a genuine zero change | **"remained unchanged at 70.00%"** — that is a fact, and it is reported |
+
+#### Evidence and provenance
+
+Every insight carries structured evidence, not just prose: endpoint values, the change, the student count, the students affected by name, and — where a threshold decided the outcome — its value **and source** (`system_default`, `department_setting`, `offering_override`). The contract already refuses an insight with no evidence.
+
+#### Wording
+
+Neutral and observational: *increased, decreased, remained unchanged, below threshold, within threshold*. No loaded language, and no explanation of **why** — this system has no data about effort, attendance, health or circumstance, and a sentence that guessed would be fiction with a number attached. Tests sweep every generated sentence for speculative words as well as causal ones.
+
+Every sentence passes through `FORBIDDEN_PHRASES` at construction, so a template reaching for "caused", "effectiveness" or "at risk of failing" fails in the test suite rather than in front of a teacher.
+
+> **Defect fixed here:** that screen matched *substrings*, so "proved" fired inside "improved" — banning the entirely legitimate sentence "4 students improved by at least 5 percentage points". It now matches whole words. (An earlier repair attempt left a literal backspace byte in the source, which silently disabled the screen altogether; the current form uses space-padded containment and needs no escaping at all.)
+
+#### Report integration
+
+The class summary, student and intervention reports each gained an **Insights** section listing the sentence, its code and its evidence — so the insights reach CSV, XLSX and PDF through the Phase 7 pipeline with no new export path. The report builders still calculate nothing.
 
 ### Reporting and export (Phase 7)
 
@@ -979,6 +1056,8 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 7 delivered:** the report model (metadata, sections, typed cells), five report builders, and three exporters — CSV, XLSX and a dependency-free PDF writer. Analytics is computed once per report and serialised three ways, with cross-format agreement asserted by test. 98 report tests, 1,098 pure tests in total.
 
-**Next — Phase 8 (deterministic insights, F21):** template-filled sentences over the outputs above, with every number traceable to the analytics result that produced it and no LLM anywhere near it.
+**Phase 8 delivered:** F21 — nineteen insight codes with a category and a fixed presentation order, rules that read only existing facts, duplicate suppression, threshold provenance in the evidence, and an Insights section in the class, student and intervention reports. 118 insight tests; 1,218 pure tests in total.
 
-**Then:** the `/analytics/*` and `/reports/*` routers with `OfferingAccess` scope on every endpoint; and the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.
+**Next:** the `/analytics/*` and `/reports/*` routers with `OfferingAccess` scope on every endpoint.
+
+**Then:** the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.

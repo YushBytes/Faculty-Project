@@ -200,18 +200,93 @@ class InsightCode(StrEnum):
 
     CLASS_MEAN_MOVED = "class_mean_moved"
     CLASS_PASS_RATE_MOVED = "class_pass_rate_moved"
+    CLASS_COMPLETION_MOVED = "class_completion_moved"
     COHORT_COMPLETION_LOW = "cohort_completion_low"
     DECLINE_CLUSTER = "decline_cluster"
+    DECLINING_TREND_CLUSTER = "declining_trend_cluster"
+    REPEATED_LOW_CLUSTER = "repeated_low_cluster"
+    IMPROVEMENT_CLUSTER = "improvement_cluster"
     BORDERLINE_CLUSTER = "borderline_cluster"
+    DISTRIBUTION_PEAK = "distribution_peak"
     ATTENTION_SUMMARY = "attention_summary"
     STUDENT_TREND = "student_trend"
     STUDENT_SHARP_DECLINE = "student_sharp_decline"
     STUDENT_REPEATED_LOW = "student_repeated_low"
     STUDENT_MOST_IMPROVED = "student_most_improved"
+    STUDENT_LATEST_CHANGE = "student_latest_change"
+    STUDENT_COMPLETION_LOW = "student_completion_low"
+    STUDENT_BORDERLINE = "student_borderline"
     INTERVENTION_OBSERVED_CHANGE = "intervention_observed_change"
 
 
 INSIGHT_VOCABULARY: Final[str] = "insight_code"
+
+
+class InsightCategory(StrEnum):
+    """What an insight is *about*, for grouping in a report.
+
+    Derived from the code rather than stored on the insight: every code belongs to exactly
+    one category, so carrying both would be two spellings of one fact.
+    """
+
+    PERFORMANCE = "performance"
+    COMPLETION = "completion"
+    TREND = "trend"
+    ATTENTION = "attention"
+    DISTRIBUTION = "distribution"
+    INTERVENTION = "intervention"
+
+
+INSIGHT_CATEGORY: Final[dict[InsightCode, InsightCategory]] = {
+    InsightCode.CLASS_MEAN_MOVED: InsightCategory.PERFORMANCE,
+    InsightCode.CLASS_PASS_RATE_MOVED: InsightCategory.PERFORMANCE,
+    InsightCode.CLASS_COMPLETION_MOVED: InsightCategory.COMPLETION,
+    InsightCode.COHORT_COMPLETION_LOW: InsightCategory.COMPLETION,
+    InsightCode.DECLINE_CLUSTER: InsightCategory.TREND,
+    InsightCode.DECLINING_TREND_CLUSTER: InsightCategory.TREND,
+    InsightCode.REPEATED_LOW_CLUSTER: InsightCategory.PERFORMANCE,
+    InsightCode.IMPROVEMENT_CLUSTER: InsightCategory.TREND,
+    InsightCode.BORDERLINE_CLUSTER: InsightCategory.PERFORMANCE,
+    InsightCode.DISTRIBUTION_PEAK: InsightCategory.DISTRIBUTION,
+    InsightCode.ATTENTION_SUMMARY: InsightCategory.ATTENTION,
+    InsightCode.STUDENT_TREND: InsightCategory.TREND,
+    InsightCode.STUDENT_SHARP_DECLINE: InsightCategory.TREND,
+    InsightCode.STUDENT_REPEATED_LOW: InsightCategory.PERFORMANCE,
+    InsightCode.STUDENT_MOST_IMPROVED: InsightCategory.TREND,
+    InsightCode.STUDENT_LATEST_CHANGE: InsightCategory.PERFORMANCE,
+    InsightCode.STUDENT_COMPLETION_LOW: InsightCategory.COMPLETION,
+    InsightCode.STUDENT_BORDERLINE: InsightCategory.PERFORMANCE,
+    InsightCode.INTERVENTION_OBSERVED_CHANGE: InsightCategory.INTERVENTION,
+}
+"""Every code's category. A test asserts the mapping is total, so a new code cannot be
+added without deciding where it belongs."""
+
+INSIGHT_ORDER: Final[tuple[InsightCode, ...]] = (
+    # Cohort performance first, then what it cost in participation, then movement,
+    # then who needs a teacher, then the shape of the cohort, then one student, then actions.
+    InsightCode.CLASS_MEAN_MOVED,
+    InsightCode.CLASS_PASS_RATE_MOVED,
+    InsightCode.CLASS_COMPLETION_MOVED,
+    InsightCode.COHORT_COMPLETION_LOW,
+    InsightCode.DECLINE_CLUSTER,
+    InsightCode.DECLINING_TREND_CLUSTER,
+    InsightCode.REPEATED_LOW_CLUSTER,
+    InsightCode.IMPROVEMENT_CLUSTER,
+    InsightCode.BORDERLINE_CLUSTER,
+    InsightCode.ATTENTION_SUMMARY,
+    InsightCode.DISTRIBUTION_PEAK,
+    InsightCode.STUDENT_LATEST_CHANGE,
+    InsightCode.STUDENT_TREND,
+    InsightCode.STUDENT_SHARP_DECLINE,
+    InsightCode.STUDENT_REPEATED_LOW,
+    InsightCode.STUDENT_BORDERLINE,
+    InsightCode.STUDENT_COMPLETION_LOW,
+    InsightCode.STUDENT_MOST_IMPROVED,
+    InsightCode.INTERVENTION_OBSERVED_CHANGE,
+)
+"""**Presentation order, not priority.** Insights are listed in this sequence so two
+renderings of the same cohort read identically. It says nothing about which finding matters
+most — that is a judgement for the person reading, who knows the students."""
 
 
 class InsightScope(StrEnum):

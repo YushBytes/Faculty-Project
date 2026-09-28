@@ -203,12 +203,9 @@ def compare_assessments(
     from_coverage = assessment_coverage(snapshot, from_assessment, active_only=active_only)
     to_coverage = assessment_coverage(snapshot, to_assessment, active_only=active_only)
 
-    mean_change = _delta(
-        mean_percent(before, noun=PAIRED_NOUN),
-        mean_percent(after, noun=PAIRED_NOUN),
-        n=len(paired),
-        what="mean",
-    )
+    from_mean = mean_percent(before, noun=PAIRED_NOUN)
+    to_mean = mean_percent(after, noun=PAIRED_NOUN)
+    mean_change = _delta(from_mean, to_mean, n=len(paired), what="mean")
     median_change = _delta(
         median_percent(before, noun=PAIRED_NOUN),
         median_percent(after, noun=PAIRED_NOUN),
@@ -240,6 +237,8 @@ def compare_assessments(
         from_assessment=from_assessment,
         to_assessment=to_assessment,
         intersection_n=len(paired),
+        from_mean=from_mean,
+        to_mean=to_mean,
         mean_change=mean_change,
         median_change=median_change,
         pass_percent_change=pass_change,

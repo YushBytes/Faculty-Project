@@ -108,9 +108,18 @@ _WORD_BOUNDARY = re.compile(r"[^a-z]+")
 
 
 def _reject_forbidden_wording(text: str, *, field: str) -> str:
-    """Reject predictive or causal claims in text that reaches a user."""
-    normalised = " ".join(_WORD_BOUNDARY.split(text.lower())).strip()
-    found = [phrase for phrase in FORBIDDEN_PHRASES if phrase in normalised]
+    """Reject predictive or causal claims in text that reaches a user.
+
+    Matched on **whole words**, not substrings. "proved" must not fire inside "improved",
+    which the system says constantly and legitimately — "4 students improved by at least 5
+    percentage points" is exactly the kind of neutral observation this layer exists to make.
+    A substring match would ban the sentence and, worse, teach the next author to phrase
+    findings around the screen rather than around the data.
+    """
+    # Padded with spaces so a phrase matches only whole words: 'proved' must not fire
+    # inside 'improved', which the system says constantly and legitimately.
+    normalised = f" {' '.join(_WORD_BOUNDARY.split(text.lower())).strip()} "
+    found = [phrase for phrase in FORBIDDEN_PHRASES if f" {phrase} " in normalised]
     if found:
         raise ValueError(
             f"{field} contains forbidden wording {found}: analytics states what the data "
@@ -929,6 +938,17 @@ class AssessmentComparison(_Generated):
     to_assessment: AssessmentRef
     intersection_n: int = Field(ge=0)
 
+    from_mean: Measure | None = None
+    """The earlier assessment's mean **over the intersection** — not its own published mean.
+
+    Carried because it is what ``mean_change`` was computed from: a reader (or a report) that
+    wants to state the movement in full needs both endpoints, and recovering them from the
+    narrative would couple two modules through prose.
+    """
+
+    to_mean: Measure | None = None
+    """The later assessment's mean over the same intersection."""
+
     mean_change: Measure
     median_change: Measure
     pass_percent_change: Measure
@@ -957,6 +977,21 @@ class AssessmentComparison(_Generated):
         if self.intersection_n == 0 and self.mean_change.is_ok:
             raise ValueError(
                 "no student was assessed in both assessments, so no change can be reported"
+            )
+        if (
+            self.from_mean is not None
+            and self.to_mean is not None
+            and self.from_mean.is_ok
+            and self.to_mean.is_ok
+            and self.mean_change.is_ok
+            and self.to_mean.value is not None
+            and self.from_mean.value is not None
+            and self.mean_change.value != self.to_mean.value - self.from_mean.value
+        ):
+            raise ValueError(
+                f"mean_change is {self.mean_change.value} but the endpoints differ by "
+                f"{self.to_mean.value - self.from_mean.value}; the change must be the "
+                "difference of the means it is reported with"
             )
         return self
 

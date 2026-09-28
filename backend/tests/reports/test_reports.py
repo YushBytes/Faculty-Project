@@ -214,6 +214,7 @@ class TestClassReport:
         report = canonical_class()
         assert [s.title for s in report.sections] == [
             "Summary",
+            "Insights",
             "Assessments",
             "Segments and distribution",
             "Attention",
@@ -221,6 +222,7 @@ class TestClassReport:
         assert [t.name for t in report.tables] == [
             "Class summary",
             "Data coverage",
+            "Insights",
             "Assessments",
             "Segments",
             "Course score distribution",

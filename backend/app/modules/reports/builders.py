@@ -44,6 +44,11 @@ from app.modules.analytics.core.contracts import (
     OfferingSnapshot,
     StudentRef,
 )
+from app.modules.analytics.core.insights import (
+    class_insights,
+    intervention_insights,
+    student_insights,
+)
 from app.modules.analytics.core.interventions import (
     intervention_outcomes,
     outcome_summary,
@@ -52,6 +57,7 @@ from app.modules.analytics.core.outputs import (
     OBSERVATIONAL_CAVEAT,
     AttentionFlag,
     DataCoverage,
+    GeneratedInsight,
     InterventionOutcome,
 )
 from app.modules.analytics.core.profile import student_profile
@@ -90,6 +96,28 @@ def _coverage_table(coverage: DataCoverage, *, name: str = "Data coverage") -> T
                 count(coverage.missing),
                 text(coverage.basis),
             ),
+        ),
+    )
+
+
+def _insight_table(insights: Sequence[GeneratedInsight], *, name: str = "Insights") -> Table:
+    """The generated sentences, each beside the code and evidence that produced it.
+
+    The code travels with the sentence so a reader can trace the wording back to its rule,
+    and the evidence so they can check the arithmetic without leaving the page.
+    """
+    return Table(
+        name=name,
+        headers=("Insight", "Code", "Evidence"),
+        rows=tuple(
+            (
+                text(insight.text),
+                text(insight.code.value),
+                text(
+                    "; ".join(f"{item.name}: {item.value}" for item in insight.explanation.evidence)
+                ),
+            )
+            for insight in insights
         ),
     )
 
@@ -213,6 +241,8 @@ def class_report(
     if health.students_requiring_attention is None:
         notes.append(ATTENTION_NOT_EVALUATED)
 
+    generated = class_insights(snapshot, thresholds, active_only=active_only, generated_at=stamp)
+
     sections = [
         Section(
             title="Summary",
@@ -220,6 +250,20 @@ def class_report(
             tables=(summary, _coverage_table(health.coverage)),
             notes=tuple(notes),
         ),
+    ]
+    if generated:
+        sections.append(
+            Section(
+                title="Insights",
+                tables=(_insight_table(generated),),
+                notes=tuple(
+                    dict.fromkeys(
+                        caveat for insight in generated for caveat in insight.explanation.caveats
+                    )
+                ),
+            )
+        )
+    sections += [
         Section(title="Assessments", tables=(assessments,)),
         Section(title="Segments and distribution", tables=(segments, bins)),
     ]
@@ -414,6 +458,15 @@ def student_report(
         ),
     )
 
+    generated = student_insights(
+        snapshot,
+        student_id,
+        thresholds,
+        profile=profile,
+        active_only=active_only,
+        generated_at=stamp,
+    )
+
     sections = [
         Section(
             title="Summary",
@@ -421,6 +474,10 @@ def student_report(
             tables=(summary,),
             notes=profile.history.explanation.caveats,
         ),
+    ]
+    if generated:
+        sections.append(Section(title="Insights", tables=(_insight_table(generated),)))
+    sections += [
         Section(
             title="Assessment history",
             tables=(history, _coverage_table(profile.history.coverage)),
@@ -886,6 +943,16 @@ def intervention_report(
                 title="Observed outcomes",
                 tables=(_outcome_table(outcomes),)
                 + ((_coverage_table(coverage),) if coverage else ()),
+                notes=(OBSERVATIONAL_CAVEAT,),
+            ),
+            Section(
+                title="Insights",
+                tables=(
+                    _insight_table(
+                        intervention_insights(outcomes, generated_at=stamp),
+                        name="Intervention insights",
+                    ),
+                ),
                 notes=(OBSERVATIONAL_CAVEAT,),
             ),
         ),
