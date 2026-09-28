@@ -33,6 +33,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.types import JsonDecimal
 from app.modules.analytics.core.contracts import (
     AssessmentRef,
     OfferingSnapshot,
@@ -107,10 +108,10 @@ class SeriesPoint(BaseModel):
     assessment_code: str
     sequence_no: int
     state: DerivedState
-    percentage: Decimal | None = None
-    score: Decimal | None = None
-    max_marks: Decimal
-    weightage: Decimal = Decimal("1")
+    percentage: JsonDecimal | None = None
+    score: JsonDecimal | None = None
+    max_marks: JsonDecimal
+    weightage: JsonDecimal = Decimal("1")
     """The assessment's weight in the course score.
 
     Carried on the point so the weighted course score (F2) is computable from a series

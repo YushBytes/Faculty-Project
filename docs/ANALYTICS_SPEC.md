@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 8 complete — **F1–F21 implemented**, plus reporting and export (CSV, XLSX, PDF). Attention flags and intervention outcomes are computed in memory; **neither is persisted yet** (D5/D6 tables and the C4 recompute hook wait on a database — Phase 5b/6b). Still to come: the `/analytics/*` and `/reports/*` API.
+**Status:** Phase 9 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads. Attention flags and intervention outcomes are computed per request and **still not persisted** (D5/D6 tables and the real C4 recompute wait on a database — Phase 5b/6b).
 **Last updated:** 2026-09-26
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -49,7 +49,8 @@ app/modules/analytics/
     schemas.py          API surface: re-exports the contracts          [Phase 1]
     services.py         the SnapshotSource and RecomputeHook ports     [Phase 1]
     repository.py       platform reads mapped onto the snapshot        [Phase 3]
-    router.py           /api/v1/analytics/*                            [later]
+    service.py          application service: one read, one computation [Phase 9]
+    router.py           the /api/v1 endpoints                          [Phase 9]
     core/
         contracts.py    inputs: OfferingSnapshot, StudentRef, AssessmentRef, ResultRecord
         policy.py       the missing-data policy; StudentSeries
@@ -324,6 +325,11 @@ Questions the formula table above left open, and the answer the code now holds. 
 | Segment *transitions* ("3 moved from Declining to Stable")? | **Not implemented** | Segmentation computes from the current series; a historical segment is derivable but not exposed by any contract, and §19 says not to invent transitions the data does not carry. |
 | Why did the causal screen need fixing? | It matched substrings, so "proved" fired inside "improved" | The system says "improved" constantly and legitimately. Whole-word matching keeps every real claim rejected without banning honest wording. |
 
+| Out-of-scope offering: 403 or 404? | **404**, from the platform's own read | A 403 confirms the offering exists. The platform already made this choice (contract C6); the API inherits it rather than deciding again. |
+| A student not in the offering? | 404 | The question has no answer for them here, and an empty profile would read like a real one. |
+| Does the router check permissions? | No — the service's read does | Two checks are two things to keep in step; a test asserts the router adds none. |
+| Where do the API response models live? | `service.py`, composing the analytics contracts | They hold contracts rather than re-describing them, so there is still one definition of every number and the OpenAPI document comes from the engine. |
+
 A guard worth naming: any function taking both a snapshot and a `ThresholdSet` rejects a set resolved against a different pass mark. Quoting one pass mark in an explanation while applying another in the arithmetic is the most misleading thing this layer could do, so it fails loudly instead.
 
 ### Deterministic insights (Phase 8, F21)
@@ -398,6 +404,48 @@ Every sentence passes through `FORBIDDEN_PHRASES` at construction, so a template
 #### Report integration
 
 The class summary, student and intervention reports each gained an **Insights** section listing the sentence, its code and its evidence — so the insights reach CSV, XLSX and PDF through the Phase 7 pipeline with no new export path. The report builders still calculate nothing.
+
+### The API (Phase 9)
+
+The analytics reach an HTTP client without a second implementation of anything.
+
+```
+OfferingResultsService (platform, scoped)   ->  AnalyticsRepository  ->  OfferingContext
+                                                                             |
+                                            analytics/core  <-----------------
+                                                   |
+                                            AnalyticsService  ->  router  ->  JSON / file
+```
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/offerings/{id}/analytics` | `ClassHealth`, `ChangeAnalysis`, attention counts, insights |
+| `GET /api/v1/offerings/{id}/students/{student_id}/analytics` | profile, segment, flags, insights |
+| `GET /api/v1/offerings/{id}/attention` | every flag, R1→R7, overlaps preserved |
+| `GET /api/v1/offerings/{id}/insights` | the deterministic sentences |
+| `GET /api/v1/offerings/{id}/reports/{kind}?format=csv\|xlsx\|pdf` | the report as a download |
+
+#### Authorisation
+
+There is **no second RBAC system**. Every read goes through `OfferingResultsService.for_user`, so an offering outside the caller's scope raises the platform's own `NotFoundError` — out-of-scope and non-existent are the same **404**, and existence is never disclosed. A student who is not enrolled in the offering is also a 404: "how is this student doing in this offering" has no answer for them, which is different from an empty profile.
+
+#### One read, one computation
+
+`class_health` builds the cohort's profiles and segments; `class_insights` needs the same health block, attention and comparison. The service computes each fact **once** and threads it down (`class_insights` gained optional `health`/`attentions`/`analysis` parameters for exactly this), so a dashboard request builds the cohort once rather than three times. A test asserts the platform is read exactly once per request.
+
+#### Insufficient data is a 200
+
+A trend that could not be classified, a comparison with no earlier assessment, an attention block that was not evaluated — each is a **value in the response carrying its own reason**, not an error and not a silent zero. The only 4xx responses concern the request itself: unauthenticated (401), out of scope or unknown student (404), unknown report kind (422, rejected by the enum) or unknown export format (404).
+
+#### Serialisation
+
+Response models **are** the analytics contracts, so the OpenAPI document at `/docs` is generated from the same definitions the engine produces — there is no parallel set of API schemas to drift. Decimals serialise as JSON numbers, enums as their values, and evidence, thresholds, threshold sources and data coverage all survive the trip.
+
+> **Defect fixed here:** `SeriesPoint` used a plain `Decimal`, so a student's score serialised as the *string* `"45.00"` while every mean beside it was the number `45.0`. It now uses `JsonDecimal` like every other published number. Python-side values are unchanged — the type only affects JSON rendering.
+
+#### Still deferred
+
+Intervention and attention **persistence remain deferred** (D5/D6), and the C4 hook is still the platform's no-op. The service exposes `intervention_outcomes(...)` taking caller-supplied records, so the outcome analytics are reachable the moment that storage lands, but there are no write endpoints and no Agent 2 tables were created to fake it.
 
 ### Reporting and export (Phase 7)
 
@@ -1058,6 +1106,6 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 8 delivered:** F21 — nineteen insight codes with a category and a fixed presentation order, rules that read only existing facts, duplicate suppression, threshold provenance in the evidence, and an Insights section in the class, student and intervention reports. 118 insight tests; 1,218 pure tests in total.
 
-**Next:** the `/analytics/*` and `/reports/*` routers with `OfferingAccess` scope on every endpoint.
+**Phase 9 delivered:** `AnalyticsService` and five `/api/v1` endpoints serving class analytics, student analytics, attention, insights and report downloads — reusing the platform's scope, computing analytics once per request, and generating the OpenAPI document from the analytics contracts themselves. 60 API tests, 1,278 pure tests in total.
 
-**Then:** the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available.
+**Next:** the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available. The service and endpoints above are written so that storage slots in beneath them without changing a response.

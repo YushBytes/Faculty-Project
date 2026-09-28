@@ -900,21 +900,33 @@ def class_insights(
     snapshot: OfferingSnapshot,
     thresholds: ThresholdSet,
     *,
+    health: ClassHealth | None = None,
+    attentions: Sequence[StudentAttention] | None = None,
+    analysis: ChangeAnalysis | None = None,
     active_only: bool = True,
     generated_at: datetime | None = None,
 ) -> tuple[GeneratedInsight, ...]:
     """Every cohort-level insight the data supports, in presentation order.
 
-    Analytics is computed once here and shared between the rules, rather than each rule
-    rebuilding the cohort.
+    Analytics is computed once and shared between the rules, rather than each rule rebuilding
+    the cohort. A caller holding any of the three facts already — the API service builds the
+    health block for its own response — passes them in rather than paying for them twice.
+    They are the same objects either way; nothing is computed differently.
     """
     stamp = generated_at or datetime.now(UTC)
     if latest_published(snapshot) is None:
         return ()
 
-    health = class_health(snapshot, thresholds, active_only=active_only, generated_at=stamp)
-    attentions = cohort_attention(snapshot, thresholds, active_only=active_only, generated_at=stamp)
-    analysis = change_analysis(snapshot, thresholds, active_only=active_only, generated_at=stamp)
+    if health is None:
+        health = class_health(snapshot, thresholds, active_only=active_only, generated_at=stamp)
+    if attentions is None:
+        attentions = cohort_attention(
+            snapshot, thresholds, active_only=active_only, generated_at=stamp
+        )
+    if analysis is None:
+        analysis = change_analysis(
+            snapshot, thresholds, active_only=active_only, generated_at=stamp
+        )
 
     produced: list[GeneratedInsight | None] = [
         _class_mean_insight(analysis, generated_at=stamp),
@@ -935,13 +947,24 @@ def offering_insights(
     thresholds: ThresholdSet,
     *,
     interventions: Sequence[Intervention] = (),
+    health: ClassHealth | None = None,
+    attentions: Sequence[StudentAttention] | None = None,
+    analysis: ChangeAnalysis | None = None,
     active_only: bool = True,
     generated_at: datetime | None = None,
 ) -> tuple[GeneratedInsight, ...]:
     """Cohort insights plus any intervention outcomes, in one ordered list."""
     stamp = generated_at or datetime.now(UTC)
     produced = list(
-        class_insights(snapshot, thresholds, active_only=active_only, generated_at=stamp)
+        class_insights(
+            snapshot,
+            thresholds,
+            health=health,
+            attentions=attentions,
+            analysis=analysis,
+            active_only=active_only,
+            generated_at=stamp,
+        )
     )
     if interventions:
         outcomes = intervention_outcomes(

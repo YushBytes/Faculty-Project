@@ -17,7 +17,7 @@ in ``services.py``. That keeps every formula unit testable against hand-computed
 and keeps faculty scope and PII rules enforced in one place (the platform services), not
 duplicated here.
 
-What is in place after Phase 8
+What is in place after Phase 9
 ------------------------------
 
 ``core/contracts.py``   inputs: ``OfferingSnapshot`` and the refs it holds
@@ -41,10 +41,12 @@ What is in place after Phase 8
 ``config.py``           the system-default threshold layer, from settings
 ``schemas.py``          the API surface (re-exports the contracts; no second copy)
 ``services.py``         the ``SnapshotSource`` and ``RecomputeHook`` ports
+``service.py``          the application service the API calls
+``router.py``           the ``/api/v1`` endpoints
 ``repository.py``       the platform's stored data, mapped onto ``OfferingSnapshot``
 
-Still to come: the ``/analytics/*`` and ``/reports/*`` routers, plus the persistence of
-interventions and attention flags and the real ``recompute`` hook, which need a database.
+Still to come: the persistence of interventions and attention flags, and the real
+``recompute`` hook, all of which need a database.
 They are listed in docs/ANALYTICS_SPEC.md with the formula each will implement; none is
 stubbed, because an empty module that returns a plausible value is indistinguishable from a
 working one.
