@@ -1108,7 +1108,7 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 9 delivered:** `AnalyticsService` and five `/api/v1` endpoints serving class analytics, student analytics, attention, insights and report downloads — reusing the platform's scope, computing analytics once per request, and generating the OpenAPI document from the analytics contracts themselves. 60 API tests, 1,278 pure tests in total.
 
-**Phase 10 delivered:** the deferred persistence, against real PostgreSQL. `attention_flags` (D6) materialised from the engine by the C4 recompute hook; `interventions`, `intervention_students` and `intervention_reasons` (D5); migration `0007`; and four intervention endpoints. 44 database-backed tests, 1,643 in total.
+**Phase 10 delivered:** the deferred persistence, against real PostgreSQL. `attention_flags` (D6) materialised from the engine by the C4 recompute hook; `interventions`, `intervention_students` and `intervention_reasons` (D5); migration `0007`; and four intervention endpoints. 47 database-backed tests, 1,646 in total.
 
 **Where the truth lives.** The analytics engine stays the single source of truth for attention: `GET /offerings/{id}/attention` and every report still compute from the current snapshot, so no response changed in Phase 10. The table is a *materialised* copy maintained by recompute — it exists for history (D6), for the dashboard index `attention_flags(offering_id, status)` (D9), and so an intervention reason can point by foreign key at the flag that prompted it. It is deliberately **not** readable or writable over HTTP: two endpoints answering "what is firing?" would be two sources of truth, and a client-created flag would be indistinguishable from a rule that actually fired.
 
