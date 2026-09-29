@@ -48,6 +48,7 @@ from app.modules.assessments.schemas import (
     OfferingResults,
 )
 from app.modules.assessments.service import OfferingResultsService, SettingsService
+from app.modules.reports.model import OfferingIdentity
 from app.modules.students.models import EnrollmentStatus
 from app.modules.users.models import User
 
@@ -143,6 +144,9 @@ class OfferingContext(BaseModel):
 
     snapshot: OfferingSnapshot
     thresholds: ThresholdSet
+    identity: OfferingIdentity = OfferingIdentity()
+    """Course code, section and term, for naming a report. Not an analytics input: the engine
+    never reads it, and the snapshot deliberately excludes it."""
 
 
 class AnalyticsRepository:
@@ -189,6 +193,11 @@ class AnalyticsRepository:
         return OfferingContext(
             snapshot=snapshot_from_offering_results(data),
             thresholds=self.thresholds_from(data),
+            identity=OfferingIdentity(
+                course_code=data.offering.course_code,
+                section_name=data.offering.section_name,
+                term_code=data.offering.term_code,
+            ),
         )
 
     def thresholds_from(self, data: OfferingResults) -> ThresholdSet:

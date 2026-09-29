@@ -67,6 +67,7 @@ from app.modules.analytics.core.student import student_ref
 from app.modules.analytics.core.thresholds import ThresholdSet
 from app.modules.reports.model import (
     Cell,
+    OfferingIdentity,
     Report,
     ReportKind,
     ReportMetadata,
@@ -128,17 +129,21 @@ def _metadata(
     title: str,
     *,
     subject: str | None = None,
+    identity: OfferingIdentity | None = None,
     generated_at: datetime,
 ) -> ReportMetadata:
+    """``identity`` is optional so the builders stay provable from a snapshot alone; when the
+    service supplies it, the file names the course, section and term it is about."""
+    named = identity or OfferingIdentity()
     return ReportMetadata(
         kind=kind,
         title=title,
         generated_at=generated_at,
         offering_id=str(snapshot.offering_id),
         subject=subject,
-        course_code=None,
-        section_name=None,
-        term_code=None,
+        course_code=named.course_code,
+        section_name=named.section_name,
+        term_code=named.term_code,
     )
 
 
@@ -153,6 +158,7 @@ def class_report(
     snapshot: OfferingSnapshot,
     thresholds: ThresholdSet,
     *,
+    identity: OfferingIdentity | None = None,
     active_only: bool = True,
     generated_at: datetime | None = None,
 ) -> Report:
@@ -280,7 +286,13 @@ def class_report(
         )
 
     return Report(
-        metadata=_metadata(snapshot, ReportKind.CLASS_SUMMARY, "Class summary", generated_at=stamp),
+        metadata=_metadata(
+            snapshot,
+            ReportKind.CLASS_SUMMARY,
+            "Class summary",
+            identity=identity,
+            generated_at=stamp,
+        ),
         sections=tuple(sections),
     )
 
@@ -342,6 +354,7 @@ def student_report(
     student_id: uuid.UUID,
     thresholds: ThresholdSet,
     *,
+    identity: OfferingIdentity | None = None,
     interventions: Sequence[Intervention] = (),
     active_only: bool = True,
     generated_at: datetime | None = None,
@@ -513,6 +526,7 @@ def student_report(
             ReportKind.STUDENT_PERFORMANCE,
             "Student performance",
             subject=_student_label(student),
+            identity=identity,
             generated_at=stamp,
         ),
         sections=tuple(sections),
@@ -556,6 +570,7 @@ def attention_report(
     snapshot: OfferingSnapshot,
     thresholds: ThresholdSet,
     *,
+    identity: OfferingIdentity | None = None,
     active_only: bool = True,
     generated_at: datetime | None = None,
 ) -> Report:
@@ -630,7 +645,9 @@ def attention_report(
     )
 
     return Report(
-        metadata=_metadata(snapshot, ReportKind.ATTENTION, "Attention", generated_at=stamp),
+        metadata=_metadata(
+            snapshot, ReportKind.ATTENTION, "Attention", identity=identity, generated_at=stamp
+        ),
         sections=(
             Section(
                 title="Summary",
@@ -657,6 +674,7 @@ def comparison_report(
     snapshot: OfferingSnapshot,
     thresholds: ThresholdSet,
     *,
+    identity: OfferingIdentity | None = None,
     from_assessment: AssessmentRef | None = None,
     to_assessment: AssessmentRef | None = None,
     active_only: bool = True,
@@ -757,6 +775,7 @@ def comparison_report(
                 if analysis.from_assessment
                 else analysis.to_assessment.code
             ),
+            identity=identity,
             generated_at=stamp,
         ),
         sections=(
@@ -868,6 +887,7 @@ def intervention_report(
     interventions: Sequence[Intervention],
     thresholds: ThresholdSet,
     *,
+    identity: OfferingIdentity | None = None,
     active_only: bool = True,
     generated_at: datetime | None = None,
 ) -> Report:
@@ -926,6 +946,7 @@ def intervention_report(
             snapshot,
             ReportKind.INTERVENTION_OUTCOME,
             "Intervention outcomes",
+            identity=identity,
             generated_at=stamp,
         ),
         sections=(

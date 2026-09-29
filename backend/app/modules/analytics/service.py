@@ -314,18 +314,21 @@ class AnalyticsService:
         loaded = self.context(offering_id, actor=actor)
         snapshot, thresholds = loaded.snapshot, loaded.thresholds
 
+        named = loaded.identity
         match kind:
             case ReportKind.CLASS_SUMMARY:
-                return class_report(snapshot, thresholds, generated_at=stamp)
+                return class_report(snapshot, thresholds, identity=named, generated_at=stamp)
             case ReportKind.ATTENTION:
-                return attention_report(snapshot, thresholds, generated_at=stamp)
+                return attention_report(snapshot, thresholds, identity=named, generated_at=stamp)
             case ReportKind.ASSESSMENT_COMPARISON:
-                return comparison_report(snapshot, thresholds, generated_at=stamp)
+                return comparison_report(snapshot, thresholds, identity=named, generated_at=stamp)
             case ReportKind.STUDENT_PERFORMANCE:
                 if student_id is None:
                     raise NotFoundError("A student report needs a student_id.")
                 self._student(snapshot, student_id)
-                return student_report(snapshot, student_id, thresholds, generated_at=stamp)
+                return student_report(
+                    snapshot, student_id, thresholds, identity=named, generated_at=stamp
+                )
             case ReportKind.INTERVENTION_OUTCOME:
                 # Stored interventions (D5) are read through their own repository, which maps
                 # rows onto the analytics input contract. An offering with none recorded still
@@ -334,6 +337,7 @@ class AnalyticsService:
                     snapshot,
                     self.stored_interventions(offering_id),
                     thresholds,
+                    identity=named,
                     generated_at=stamp,
                 )
         raise NotFoundError(f"Unknown report type {kind}.")
@@ -345,10 +349,13 @@ class AnalyticsService:
             raise NotFoundError(f"Unknown export format {export_format!r}.")
         stem = report.metadata.kind.value
         stamp = report.metadata.generated_at.date().isoformat()
+        code = report.metadata.course_code
+        safe = "".join(c for c in code if c.isalnum() or c in "-_") if code else ""
+        name = f"{stem}-{safe}-{stamp}" if safe else f"{stem}-{stamp}"
         return (
             exporter(report),
             ExportFormat.MEDIA_TYPES[export_format],
-            f"{stem}-{stamp}.{export_format}",
+            f"{name}.{export_format}",
         )
 
 

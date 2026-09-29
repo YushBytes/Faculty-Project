@@ -210,6 +210,21 @@ class ReportKind(StrEnum):
     INTERVENTION_OUTCOME = "intervention_outcome"
 
 
+class OfferingIdentity(BaseModel):
+    """How a report names the offering it is about, for a human reader.
+
+    The platform's own read already carries these labels; they are threaded through so a
+    downloaded file says which course, section and term it covers. Without them two class
+    summaries are indistinguishable once they are sitting in a folder.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    course_code: str | None = None
+    section_name: str | None = None
+    term_code: str | None = None
+
+
 class ReportMetadata(BaseModel):
     """Who and what the report is about, and when it was made.
 
