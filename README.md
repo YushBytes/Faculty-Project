@@ -7,14 +7,29 @@ Academic data -> validated ingestion -> PostgreSQL -> deterministic analytics
   -> teacher intelligence -> actions/interventions -> outcome measurement -> reports
 ```
 
-One application, built by two agents working in the same codebase on the `backend` branch:
+One application, in one repository:
+
+```
+/
+├── backend/     FastAPI + SQLAlchemy + Alembic, the whole API and the analytics engine
+├── frontend/    Next.js teacher-facing app
+├── docs/        scope, contracts, data model, import format, analytics specification
+├── docker-compose.yml
+├── .env.example
+└── .github/     CI
+```
 
 | Part | Built by | Scope |
 |---|---|---|
 | Data platform | Agent 1 | Auth, users, RBAC and faculty scope, departments/terms/courses/sections/offerings, students, assessments and results, Excel/CSV import pipeline, audit |
 | Intelligence | Agent 2 | Analytics, attention/segmentation, interventions and outcomes, reports |
+| Teacher UI | Agent 3 | `frontend/` — Next.js app the faculty member actually uses |
 
-Stack: Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, pytest, Docker.
+Backend stack: Python 3.11+ (developed on 3.12), FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16,
+pytest, Docker. Frontend stack: Next.js 16, React 19, TypeScript 5, Tailwind 4, Recharts.
+
+Work happens on `backend`; `main` receives reviewed merges. The `frontend/nachiketa-ui` branch is
+the frontend's original history and was merged here — it is kept, not deleted.
 
 ## Status
 
