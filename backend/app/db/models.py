@@ -15,12 +15,14 @@ from app.modules.interventions.models import (
 from app.modules.organization.models import (
     AcademicTerm,
     Course,
+    CourseCoordinator,
     CourseOffering,
     Department,
     DepartmentSetting,
     OfferingFaculty,
     Section,
 )
+from app.modules.overview.models import GeneratedReport, OfferingSummary
 from app.modules.students.models import Enrollment, Student, StudentSectionHistory
 from app.modules.users.models import User
 
@@ -32,7 +34,10 @@ __all__ = [
     "AuditLog",
     "Base",
     "Course",
+    "CourseCoordinator",
     "CourseOffering",
+    "GeneratedReport",
+    "OfferingSummary",
     "Department",
     "DepartmentSetting",
     "OfferingFaculty",

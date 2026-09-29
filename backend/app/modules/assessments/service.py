@@ -290,6 +290,43 @@ class AssessmentService:
         self._session.refresh(assessment)
         return assessment
 
+    def apply_scheme(self, offering_id: uuid.UUID, *, actor: User) -> list[Assessment]:
+        """Create the SRM components for the offering's course type that do not exist yet.
+
+        Idempotent: components already present (by name, 'FT-2' == 'FT-II') are left alone,
+        so it can be re-run after adding one by hand."""
+        from app.modules.assessments.schemes import SCHEMES, component_max
+        from app.modules.imports.validation import match_key
+
+        offering = self._access.get(actor, offering_id, Access.VIEW)
+        kind = offering.course.course_type
+        if kind is None:
+            raise BusinessRuleError(
+                f"{offering.course.code} has no SRM course type (T/J/P/L/M); set it first."
+            )
+        existing = {match_key(a.name) for a in self._assessments.for_offering(offering_id)}
+        created = []
+        for name, family, weight in SCHEMES[kind]:
+            if match_key(name) in existing:
+                continue
+            created.append(
+                self._assessments.add(
+                    Assessment(
+                        offering_id=offering_id,
+                        name=name,
+                        assessment_type=family,
+                        max_marks=component_max(weight),
+                        weightage=weight,
+                        sequence_no=self._assessments.next_sequence_no(offering_id),
+                        is_published=True,
+                        created_by_id=actor.id,
+                    )
+                )
+            )
+            self._session.flush()
+        self._session.commit()
+        return created
+
     def update(
         self, assessment_id: uuid.UUID, data: AssessmentUpdate, *, actor: User
     ) -> Assessment:

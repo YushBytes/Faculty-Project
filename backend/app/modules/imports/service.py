@@ -41,6 +41,7 @@ from app.modules.imports.schemas import (
     ImportPreview,
     MissingStudent,
 )
+from app.modules.imports.tlp import parse_metadata
 from app.modules.imports.validation import (
     IDENTITY,
     IGNORE,
@@ -53,6 +54,7 @@ from app.modules.imports.validation import (
     check_headers,
     detect_format,
     fix_key,
+    match_key,
     normalise_register_number,
     validate,
 )
@@ -104,8 +106,15 @@ class ImportService:
         filename: str | None,
         content: bytes,
         actor: User,
+        *,
+        table=None,
+        upload_group_id: uuid.UUID | None = None,
     ) -> tuple[ImportBatch, Preview]:
-        table = read_table(filename, content)
+        table = table if table is not None else read_table(filename, content)
+        metadata = parse_metadata(table.preamble, table.trailer)
+        if assessment is None and metadata.get("test_name"):
+            # A TLP report names its test: import into that assessment, or say why not.
+            assessment = self._assessment_named(offering, metadata["test_name"])
         rows = [
             {"row": n, "values": values}
             for n, values in zip(table.row_numbers, table.rows, strict=True)
@@ -141,6 +150,8 @@ class ImportService:
             total_rows=len(rows),
             uploaded_by_id=actor.id,
             expires_at=now + BATCH_LIFETIME,
+            source_metadata=metadata,
+            upload_group_id=upload_group_id,
         )
         self._session.add(batch)
         self._session.flush()
@@ -149,6 +160,28 @@ class ImportService:
         self._session.commit()
         self._session.refresh(batch)
         return batch, preview
+
+    def _assessment_named(self, offering: CourseOffering, test_name: str) -> Assessment:
+        matches = [
+            a
+            for a in AssessmentRepository(self._session).for_offering(offering.id)
+            if match_key(a.name) == match_key(test_name)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        label = f"{offering.course.code} / {offering.section.name}"
+        if not matches:
+            raise ImportRejectedError(
+                f"The file is a report for test '{test_name}', but {label} has no assessment "
+                "with that name. Create the assessment first (or apply the SRM scheme).",
+                details=[
+                    {"loc": ["file"], "message": test_name, "code": "missing_assessment_definition"}
+                ],
+            )
+        raise ImportRejectedError(
+            f"The file's test name '{test_name}' matches several assessments of {label}.",
+            details=[{"loc": ["file"], "message": test_name, "code": "ambiguous_column"}],
+        )
 
     # ================================================================ read
 
@@ -300,7 +333,7 @@ class ImportService:
 
     # ================================================================ confirm
 
-    def confirm(self, batch_id: uuid.UUID, *, actor: User) -> ConfirmResult:
+    def confirm(self, batch_id: uuid.UUID, *, actor: User, publish: bool = False) -> ConfirmResult:
         batch = self.get(batch_id, actor=actor)
         # Lock the batch row: two concurrent confirms cannot both write.
         batch = self._session.scalar(
@@ -323,6 +356,22 @@ class ImportService:
         assessments = {
             a.id: a for a in AssessmentRepository(self._session).for_offering(batch.offering_id)
         }
+        if publish:
+            # Publishing is part of the same transaction, before the writes, so the recompute
+            # hook analyses the assessment the moment its marks land.
+            for assessment_id in preview.changes:
+                assessment = assessments[assessment_id]
+                if not assessment.is_published:
+                    assessment.is_published = True
+                    AuditService(self._session).record(
+                        actor_id=actor.id,
+                        entity="assessment",
+                        entity_id=str(assessment.id),
+                        action="publish",
+                        new={"via_import": str(batch.id)},
+                        offering_id=batch.offering_id,
+                    )
+            self._session.flush()
         for assessment_id, cells in preview.changes.items():
             summary = writer.apply(
                 assessments[assessment_id],
@@ -511,6 +560,9 @@ class ImportService:
             else None
         )
         label = f"{offering.course.code} / {offering.section.name} / {offering.term.code}"
+        faculty_codes = frozenset(
+            a.user.employee_code for a in offering.faculty_assignments if a.user.employee_code
+        )
         return Snapshot(
             offering_label=label,
             assessments=[AssessmentRef(a.id, a.name, a.max_marks) for a in assessments],
@@ -519,6 +571,11 @@ class ImportService:
             existing=existing,
             target_assessment_id=batch.assessment_id,
             duplicate_of=duplicate_of,
+            course_code=offering.course.code,
+            term_year=offering.term.academic_year,
+            term_semester=offering.term.semester.value if offering.term.semester else None,
+            faculty_codes=faculty_codes,
+            source_metadata=dict(batch.source_metadata or {}),
         )
 
     @staticmethod

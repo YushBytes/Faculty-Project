@@ -20,27 +20,28 @@ from difflib import SequenceMatcher
 from enum import StrEnum
 from typing import Any
 
-from app.core.tabular import normalise_header
+from app.core.tabular import IDENTITY_HEADERS, normalise_header
 from app.modules.assessments.models import ResultStatus
 from app.modules.imports.models import ImportFormat
 
 # ---------------------------------------------------------------------------- vocabulary
 
-IDENTITY = (
-    "register_number",
-    "register_no",
-    "reg_no",
-    "regno",
-    "registration_number",
-    "registration_no",
-    "roll_no",
-    "roll_number",
-)
+IDENTITY = IDENTITY_HEADERS
 NAME = ("full_name", "name", "student_name")
 LONG_ASSESSMENT = ("assessment", "assessment_name", "exam", "test", "component")
-LONG_SCORE = ("score", "marks", "mark", "marks_obtained", "obtained", "score_obtained")
+LONG_SCORE = (
+    "score",
+    "marks",
+    "mark",
+    "marks_obtained",
+    "obtained",
+    "score_obtained",
+    "obtained_mark",
+    "obtained_marks",
+    "mark_obtained",
+)
 LONG_MAX = ("max_score", "max_marks", "max", "out_of", "total_marks", "maximum", "max_mark")
-LONG_PERCENT = ("percentage", "percent", "pct", "perc")
+LONG_PERCENT = ("percentage", "percent", "pct", "perc", "percentage_obtained")
 LONG_STATUS = ("status", "attendance_status")
 IGNORED = frozenset(
     (
@@ -77,7 +78,16 @@ IGNORED = frozenset(
         "offering",
     )
 )
-SINGLE_SCORE = ("score", "marks", "mark", "marks_obtained", "obtained")
+SINGLE_SCORE = (
+    "score",
+    "marks",
+    "mark",
+    "marks_obtained",
+    "obtained",
+    "obtained_mark",
+    "obtained_marks",
+    "mark_obtained",
+)
 
 ABSENT_MARKERS = frozenset(("AB", "A", "ABS", "ABSENT", "-", "--"))
 EXEMPT_MARKERS = frozenset(("EX", "EXEMPT", "EXEMPTED"))
@@ -158,6 +168,12 @@ class Snapshot:
     existing: dict[tuple[uuid.UUID, uuid.UUID], tuple[ResultStatus, Decimal | None]]
     target_assessment_id: uuid.UUID | None = None
     duplicate_of: str | None = None  # description of an earlier committed import of this file
+    # What the platform knows about the offering, to check a TLP file's own title block.
+    course_code: str | None = None
+    term_year: str | None = None
+    term_semester: str | None = None
+    faculty_codes: frozenset[str] = frozenset()
+    source_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -250,10 +266,33 @@ def header_key(header: str) -> str:
     return normalise_header(text)
 
 
+_ROMAN = {
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+}
+
+
 def match_key(text: str) -> str:
-    """Key used to match a column or assessment name: separators ignored, so 'CT-1',
-    'CT 1' and 'ct1' are the same name (two assessments colliding here is ambiguous)."""
-    return header_key(text).replace("_", "")
+    """Key used to match a column or assessment name: separators ignored and a trailing
+    Roman numeral read as a number, so 'FT-II', 'FT 2', 'ft2' and 'FT-2' are the same name
+    (two assessments colliding here is ambiguous, never resolved by guessing).
+
+    Only a numeral that is its own token after a word counts ('FT-I', 'LLJ II'), so words
+    such as 'Viva' or 'Mix' are never read as numbers."""
+    tokens = [t for t in header_key(text).split("_") if t]
+    converted = [
+        _ROMAN.get(token, token) if index > 0 and tokens[index - 1].isalpha() else token
+        for index, token in enumerate(tokens)
+    ]
+    return "".join(converted)
 
 
 def header_max(header: str) -> Decimal | None:
@@ -393,7 +432,9 @@ def map_columns(staged: Staged, snapshot: Snapshot) -> tuple[list[ColumnInfo], l
         elif target is not None and key in SINGLE_SCORE:
             info.role = "assessment"
             info.assessment_id, info.assessment_name = target.id, target.name
-        elif key in IGNORED:
+        elif target is not None and key in LONG_PERCENT:
+            info.role = "percentage"  # checked against the score of the same row
+        elif key in IGNORED or key in LONG_PERCENT:
             info.role = "ignored"
         else:
             info.role = "assessment"
@@ -600,6 +641,19 @@ def check_percentage(
     text = (raw or "").strip()
     if not text:
         return []
+    upper = text.upper()
+    if upper in ABSENT_MARKERS or upper in EXEMPT_MARKERS:
+        marker = ResultStatus.ABSENT if upper in ABSENT_MARKERS else ResultStatus.EXEMPT
+        if status is marker:
+            return []  # "Absent" in the % column of an absent row, as TLP reports print it
+        return [
+            _err(
+                "impossible_percentage",
+                f"Percentage says '{text}' but the mark is "
+                f"{score if score is not None else 'blank'}.",
+                column,
+            )
+        ]
     value = _to_decimal(text.rstrip("%").strip())
     if value is None or value < 0 or value > 100:
         return [
@@ -619,6 +673,95 @@ def check_percentage(
             )
         ]
     return []
+
+
+# ---------------------------------------------------------------------------- TLP title block
+
+
+def metadata_issues(snapshot: Snapshot, row_count: int, absent_count: int) -> list[Issue]:
+    """Compare what a TLP file says about itself with the platform's records.
+
+    Wrong course, wrong semester, wrong assessment or wrong maximum block the import: they
+    mean the file is going to the wrong place. A faculty id that is not assigned here is a
+    warning (the report may have been generated by a colleague). A strength that disagrees
+    with the rows read means the file is incomplete and blocks.
+    """
+    meta = snapshot.source_metadata or {}
+    if not meta:
+        return []
+    issues: list[Issue] = []
+    by_id = {a.id: a for a in snapshot.assessments}
+    target = by_id.get(snapshot.target_assessment_id) if snapshot.target_assessment_id else None
+    code = meta.get("course_code")
+    if code and snapshot.course_code and code.upper() != snapshot.course_code.upper():
+        issues.append(
+            _err(
+                "course_mismatch",
+                f"The file is for course {code}, but this is {snapshot.course_code}.",
+            )
+        )
+    year, semester = meta.get("year"), meta.get("semester")
+    if year and snapshot.term_year and year != snapshot.term_year:
+        issues.append(
+            _err(
+                "term_mismatch",
+                f"The file is for academic year {year}, but this offering is in "
+                f"{snapshot.term_year}.",
+            )
+        )
+    elif semester and snapshot.term_semester and semester != snapshot.term_semester:
+        issues.append(
+            _err(
+                "term_mismatch",
+                f"The file is for the {semester.lower()} semester, but this offering is in the "
+                f"{snapshot.term_semester.lower()} semester.",
+            )
+        )
+    test = meta.get("test_name")
+    if test and target is not None and match_key(test) != match_key(target.name):
+        issues.append(
+            _err(
+                "wrong_assessment",
+                f"The file's test name is '{test}', but it is being imported into {target.name}.",
+            )
+        )
+    component_max = meta.get("component_max")
+    if component_max and target is not None and Decimal(component_max) != target.max_marks:
+        issues.append(
+            _err(
+                "max_mismatch",
+                f"The file's component maximum is {Decimal(component_max).normalize():f}, but "
+                f"{target.name} is out of {target.max_marks.normalize():f}.",
+            )
+        )
+    faculty = meta.get("faculty_code")
+    if faculty and snapshot.faculty_codes and faculty not in snapshot.faculty_codes:
+        issues.append(
+            _warn(
+                "faculty_mismatch",
+                f"The report was generated by staff id {faculty} "
+                f"({meta.get('faculty_name', 'unknown')}), who is not assigned to this offering.",
+            )
+        )
+    strength = meta.get("total_strength")
+    if strength is not None and int(Decimal(strength)) != row_count:
+        issues.append(
+            _err(
+                "summary_mismatch",
+                f"The report states a total strength of {int(Decimal(strength))} but "
+                f"{row_count} student rows were read; the file may be incomplete.",
+            )
+        )
+    absentees = meta.get("total_absentees")
+    if absentees is not None and int(Decimal(absentees)) != absent_count:
+        issues.append(
+            _warn(
+                "summary_mismatch",
+                f"The report states {int(Decimal(absentees))} absentee(s); the rows contain "
+                f"{absent_count}.",
+            )
+        )
+    return issues
 
 
 # ---------------------------------------------------------------------------- main
@@ -794,18 +937,17 @@ def validate(staged: Staged, snapshot: Snapshot) -> Preview:
             )
             cell.status, cell.score = status, score
             cell.issues.extend(issues)
-            if staged.file_format is ImportFormat.LONG:
-                pct_col = next((c.header for c in columns if c.role == "percentage"), None)
-                if pct_col and status is not None:
-                    cell.issues.extend(
-                        check_percentage(
-                            value(row, pct_col)[1],
-                            status,
-                            score,
-                            assessment.max_marks,
-                            pct_col,
-                        )
+            pct_col = next((c.header for c in columns if c.role == "percentage"), None)
+            if pct_col is not None and status is not None:
+                cell.issues.extend(
+                    check_percentage(
+                        value(row, pct_col)[1],
+                        status,
+                        score,
+                        assessment.max_marks,
+                        pct_col,
                     )
+                )
             if (
                 student is not None
                 and status is not None
@@ -884,6 +1026,18 @@ def validate(staged: Staged, snapshot: Snapshot) -> Preview:
     in_file = {r.student_id for r in results if r.student_id and not r.excluded}
     missing = [s for s in snapshot.cohort if s.id not in in_file]
     global_issues = list(file_issues)
+    global_issues.extend(
+        metadata_issues(
+            snapshot,
+            row_count=len(staged.rows),
+            absent_count=sum(
+                1
+                for r in results
+                for c in r.cells
+                if c.status is ResultStatus.ABSENT and (c.raw or "").strip()
+            ),
+        )
+    )
     if missing:
         global_issues.append(
             _warn(
@@ -949,6 +1103,7 @@ def validate(staged: Staged, snapshot: Snapshot) -> Preview:
         "errors": level_counts[Level.ERROR],
         "warnings": level_counts[Level.WARNING],
         "infos": level_counts[Level.INFO],
+        "duplicate_file": bool(snapshot.duplicate_of),
     }
     summary["can_confirm"] = summary["errors"] == 0 and summary["cells_to_write"] > 0
     return Preview(

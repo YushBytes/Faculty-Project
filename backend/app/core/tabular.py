@@ -1,8 +1,16 @@
-"""Reading uploaded CSV / Excel files into rows, with file-type detection and limits.
+"""Reading uploaded CSV / Excel / TLP-PDF files into rows, with file-type detection and limits.
 
 Used by the student bulk import and the assessment-results import pipeline. Values are
 returned as trimmed strings (or None for blank cells) so each importer applies its own
 typed validation; nothing is coerced to a number or zero here.
+
+Institutional mark reports (SRM's "FORMAT TLP5") carry a title block above the table and a
+summary block below it. The header row is therefore the first row that names a register
+number column (falling back to the first non-empty row), rows above it are kept as the
+``preamble`` and rows from the first summary line ("Total strength", "Range of marks",
+signatures, report date) onwards are kept as the ``trailer`` — never parsed as students.
+PDFs are accepted only in that TLP layout, parsed line by line with a strict pattern; a
+PDF that does not match it is rejected rather than guessed at.
 """
 
 import csv
@@ -25,6 +33,33 @@ MAX_COLUMNS = 200
 class FileType(StrEnum):
     CSV = "csv"
     XLSX = "xlsx"
+    PDF = "pdf"
+
+
+# Register-number headers (shared with the importers' vocabularies).
+IDENTITY_HEADERS = (
+    "register_number",
+    "register_no",
+    "reg_no",
+    "regno",
+    "registration_number",
+    "registration_no",
+    "roll_no",
+    "roll_number",
+)
+HEADER_SEARCH_ROWS = 30
+# A row containing any of these starts the summary block under a TLP table.
+TRAILER_MARKERS = (
+    "total strength",
+    "total absentees",
+    "total no. of failures",
+    "total no of failures",
+    "range of marks",
+    "pass mark",
+    "pass percentage",
+    "signature of",
+    "report date",
+)
 
 
 class UnsupportedFileError(BusinessRuleError):
@@ -39,6 +74,8 @@ class Table:
     row_numbers: list[int]  # 1-based spreadsheet row number of each row
     skipped_empty_rows: list[int] = field(default_factory=list)
     sheet_name: str | None = None
+    preamble: list[str] = field(default_factory=list)  # text of rows above the header
+    trailer: list[str] = field(default_factory=list)  # text of the summary block below
 
 
 def detect_file_type(filename: str | None, content: bytes) -> FileType:
@@ -50,6 +87,8 @@ def detect_file_type(filename: str | None, content: bytes) -> FileType:
         raise UnsupportedFileError(
             f"'{filename}' looks like a spreadsheet/zip but is not an .xlsx file."
         )
+    if content[:5] == b"%PDF-":
+        return FileType.PDF
     if content[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
         raise UnsupportedFileError("Legacy .xls files are not supported; save as .xlsx or .csv.")
     if name.endswith((".csv", ".txt")) or not name:
@@ -59,13 +98,14 @@ def detect_file_type(filename: str | None, content: bytes) -> FileType:
             raise UnsupportedFileError("The CSV file is not valid UTF-8 text.") from exc
         return FileType.CSV
     raise UnsupportedFileError(
-        f"Unsupported file type for '{filename}'. Upload a .csv or .xlsx file."
+        f"Unsupported file type for '{filename}'. Upload a .xlsx, .csv or TLP .pdf file."
     )
 
 
 def normalise_header(header: str) -> str:
-    """'Reg. No ' -> 'reg_no', 'CT-1 (50)' -> 'ct_1_50'."""
-    return re.sub(r"[^a-z0-9]+", "_", header.strip().lower()).strip("_")
+    """'Reg. No ' -> 'reg_no', 'CT-1 (50)' -> 'ct_1_50', '%' -> 'percent'."""
+    text = header.strip().lower().replace("%", " percent ")
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
 
 
 def read_table(filename: str | None, content: bytes) -> Table:
@@ -74,7 +114,14 @@ def read_table(filename: str | None, content: bytes) -> Table:
     if len(content) > MAX_UPLOAD_BYTES:
         raise BusinessRuleError(f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
     file_type = detect_file_type(filename, content)
-    raw_rows, sheet = _read_csv(content) if file_type is FileType.CSV else _read_xlsx(content)
+    if file_type is FileType.CSV:
+        raw_rows, sheet = _read_csv(content)
+    elif file_type is FileType.XLSX:
+        raw_rows, sheet = _read_xlsx(content)
+    else:
+        from app.core.tlp_pdf import read_tlp_pdf
+
+        raw_rows, sheet = read_tlp_pdf(content), None
     return _to_table(file_type, raw_rows, sheet)
 
 
@@ -120,13 +167,36 @@ def _cell(value: object) -> str | None:
     return str(value)
 
 
-def _to_table(file_type: FileType, raw_rows: list[list[str | None]], sheet: str | None) -> Table:
-    # First non-empty row is the header row.
-    index = 0
-    while index < len(raw_rows) and all(_blank(c) for c in raw_rows[index]):
-        index += 1
-    if index == len(raw_rows):
+def _row_text(cells: list[str | None]) -> str:
+    return " ".join(str(c).strip() for c in cells if not _blank(c))
+
+
+def _is_trailer(cells: list[str | None]) -> bool:
+    text = _row_text(cells).lower()
+    return any(marker in text for marker in TRAILER_MARKERS)
+
+
+def _find_header(raw_rows: list[list[str | None]]) -> int:
+    """The first row naming a register-number column; else the first non-empty row."""
+    first = None
+    seen = 0
+    for index, cells in enumerate(raw_rows):
+        if all(_blank(c) for c in cells):
+            continue
+        first = index if first is None else first
+        if any(isinstance(c, str) and normalise_header(c) in IDENTITY_HEADERS for c in cells):
+            return index
+        seen += 1
+        if seen >= HEADER_SEARCH_ROWS:
+            break
+    if first is None:
         raise BusinessRuleError("The file has no header row.")
+    return first
+
+
+def _to_table(file_type: FileType, raw_rows: list[list[str | None]], sheet: str | None) -> Table:
+    index = _find_header(raw_rows)
+    preamble = [_row_text(r) for r in raw_rows[:index] if not all(_blank(c) for c in r)]
     header_cells = raw_rows[index]
     while header_cells and _blank(header_cells[-1]):
         header_cells = header_cells[:-1]
@@ -137,8 +207,13 @@ def _to_table(file_type: FileType, raw_rows: list[list[str | None]], sheet: str 
     rows: list[dict[str, str | None]] = []
     numbers: list[int] = []
     skipped: list[int] = []
+    trailer: list[str] = []
     for offset, raw in enumerate(raw_rows[index + 1 :], start=index + 2):
         cells = [(c.strip() if isinstance(c, str) else c) for c in raw]
+        if trailer or _is_trailer(cells):
+            if not all(_blank(c) for c in cells):
+                trailer.append(_row_text(cells))
+            continue
         if all(_blank(c) for c in cells):
             skipped.append(offset)
             continue
@@ -156,7 +231,7 @@ def _to_table(file_type: FileType, raw_rows: list[list[str | None]], sheet: str 
     # Trailing blank rows are not worth reporting.
     last_data = numbers[-1] if numbers else index + 1
     skipped = [n for n in skipped if n < last_data]
-    return Table(file_type, headers, rows, numbers, skipped, sheet)
+    return Table(file_type, headers, rows, numbers, skipped, sheet, preamble, trailer)
 
 
 def _blank(value: object) -> bool:

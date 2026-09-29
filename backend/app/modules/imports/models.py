@@ -10,7 +10,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,3 +95,11 @@ class ImportBatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # What the file says about itself (SRM TLP header/footer: test name, academic year,
+    # component max, course, faculty, totals, ranges) and how it was routed. Informational;
+    # validation compares it with the platform's records, it never overrides them.
+    source_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    # Files uploaded together (a coordinator's multi-file TLP upload) share a group id.
+    upload_group_id: Mapped[uuid.UUID | None] = mapped_column(index=True)

@@ -16,6 +16,8 @@ dependencies = [
     "email-validator>=2.1",
     "openpyxl>=3.1",
     "python-multipart>=0.0.9",
+    "pdfplumber>=0.11",  # reading SRM TLP-format PDF mark reports
+    "reportlab>=4.2",  # presentation PDF reports with charts
 ]
 
 [project.optional-dependencies]

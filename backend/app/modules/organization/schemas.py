@@ -13,6 +13,7 @@ from pydantic import (
 )
 
 from app.core.types import Code, JsonDecimal, Name, Percent
+from app.modules.organization.models import CourseType, Semester
 
 AcademicYear = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}$")]
 Credits = Annotated[JsonDecimal, Field(ge=0, le=30, max_digits=4, decimal_places=1)]
@@ -102,6 +103,7 @@ class TermRead(_Out):
     start_date: date
     end_date: date
     is_current: bool
+    semester: Semester | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -112,6 +114,7 @@ class TermSummary(_Out):
     name: str
     academic_year: str
     is_current: bool
+    semester: Semester | None = None
 
 
 # ------------------------------------------------------------------ courses
@@ -122,12 +125,25 @@ class CourseCreate(_In):
     code: Code
     name: Name
     credits: Credits | None = None
+    course_type: CourseType | None = None
+    """Defaults to the SRM code suffix (T/J/P/L/M) when omitted."""
 
 
 class CourseUpdate(_In):
     code: Code | None = None
     name: Name | None = None
     credits: Credits | None = None
+    course_type: CourseType | None = None
+
+
+class CoordinatorSummary(_Out):
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
+class CoordinatorAssign(_In):
+    user_id: uuid.UUID
 
 
 class CourseRead(_Out):
@@ -135,9 +151,17 @@ class CourseRead(_Out):
     code: str
     name: str
     credits: JsonDecimal | None
+    course_type: CourseType | None = None
     department: DepartmentSummary
+    coordinators: list[CoordinatorSummary] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("coordinators", mode="before")
+    @classmethod
+    def _unwrap(cls, value: Any) -> Any:
+        # ORM rows are CourseCoordinator links; expose the users.
+        return [getattr(v, "user", v) for v in value or []]
 
 
 class CourseSummary(_Out):
@@ -145,6 +169,7 @@ class CourseSummary(_Out):
     code: str
     name: str
     department_id: uuid.UUID
+    course_type: CourseType | None = None
 
 
 # ------------------------------------------------------------------ sections

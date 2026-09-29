@@ -82,7 +82,7 @@ def visible_students(user: User) -> ColumnElement[bool]:
     enrolled_in_scope = Student.id.in_(
         select(Enrollment.student_id).where(Enrollment.offering_id.in_(visible_offering_ids(user)))
     )
-    if user.role is Role.HOD:
+    if user.role in (Role.HOD, Role.ACADEMIC_HEAD):
         return (Student.department_id == user.department_id) | enrolled_in_scope
     return enrolled_in_scope
 

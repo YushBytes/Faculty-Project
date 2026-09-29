@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,10 @@ from app.modules.imports.schemas import (
     ImportBatchRead,
     ImportPreview,
     MappingRequest,
+    TlpUploadRead,
 )
 from app.modules.imports.service import ImportService, preview_read
+from app.modules.imports.tlp_service import TlpUploadService
 
 DB = Annotated[Session, Depends(get_db)]
 Only = Annotated[
@@ -207,8 +209,15 @@ def mapping(
     description="Revalidates against current data; refuses while any blocking error remains. "
     "Writes results, audit rows and runs the recompute hook in a single transaction.",
 )
-def confirm(batch_id: uuid.UUID, actor: CurrentUser, db: DB) -> ConfirmResult:
-    return ImportService(db).confirm(batch_id, actor=actor)
+def confirm(
+    batch_id: uuid.UUID,
+    actor: CurrentUser,
+    db: DB,
+    publish: Annotated[
+        bool, Query(description="Also publish the assessment(s), in the same transaction")
+    ] = False,
+) -> ConfirmResult:
+    return ImportService(db).confirm(batch_id, actor=actor, publish=publish)
 
 
 @imports.post("/{batch_id}/discard", response_model=ImportBatchRead, responses=_WRITE)
@@ -216,4 +225,63 @@ def discard(batch_id: uuid.UUID, actor: CurrentUser, db: DB) -> ImportBatchRead:
     return ImportBatchRead.model_validate(ImportService(db).discard(batch_id, actor=actor))
 
 
-ROUTERS = [uploads, imports]
+# ------------------------------------------------------------------ multi-file TLP uploads
+
+tlp = APIRouter(prefix="/tlp-uploads", tags=["imports"], responses=_COMMON)
+
+
+@tlp.post(
+    "",
+    response_model=TlpUploadRead,
+    status_code=201,
+    responses=_WRITE,
+    summary="Upload one or many SRM TLP mark reports (xlsx, csv or TLP pdf)",
+    description=(
+        "Each file is routed to its offering (course code and academic year from the "
+        "report's title block, section from its register numbers) and assessment (test "
+        "name), then staged through the ordinary import pipeline. Nothing is written to "
+        "results until the group (or an individual import) is confirmed. Files that cannot "
+        "be read or routed are reported as `rejected` with the reason. Pass `offering_id` to "
+        "skip routing (a faculty member uploading their own section), or `course_id` / "
+        "`term_id` for files without a title block."
+    ),
+)
+async def upload_tlp(
+    actor: CurrentUser,
+    db: DB,
+    files: Annotated[list[UploadFile], File(description="Up to 150 files, 5 MB each")],
+    course_id: Annotated[uuid.UUID | None, Form()] = None,
+    term_id: Annotated[uuid.UUID | None, Form()] = None,
+    offering_id: Annotated[uuid.UUID | None, Form()] = None,
+) -> TlpUploadRead:
+    contents = [(f.filename, await f.read()) for f in files]
+    return TlpUploadService(db).upload(
+        contents, actor=actor, course_id=course_id, term_id=term_id, offering_id=offering_id
+    )
+
+
+@tlp.get("/{group_id}", response_model=TlpUploadRead, summary="Status of every staged file")
+def tlp_group(group_id: uuid.UUID, actor: CurrentUser, db: DB) -> TlpUploadRead:
+    return TlpUploadService(db).group(group_id, actor=actor)
+
+
+@tlp.post(
+    "/{group_id}/confirm",
+    response_model=TlpUploadRead,
+    responses=_WRITE,
+    summary="Confirm every confirmable file of the upload",
+    description=(
+        "Each file is confirmed in its own transaction (results, audit, analytics). Files "
+        "with blocking errors stay staged and are reported; nothing is half-written."
+    ),
+)
+def tlp_confirm(
+    group_id: uuid.UUID,
+    actor: CurrentUser,
+    db: DB,
+    publish: Annotated[bool, Query(description="Publish the assessments too")] = True,
+) -> TlpUploadRead:
+    return TlpUploadService(db).confirm_group(group_id, actor=actor, publish=publish)
+
+
+ROUTERS = [uploads, imports, tlp]

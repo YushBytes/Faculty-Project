@@ -1,10 +1,12 @@
-"""The real teacher dataset, end to end, reconciled against the source report.
+"""A real TLP5 mark report, anonymised, end to end, reconciled against its own summary.
 
-Source: an official SRM IST "FORMAT TLP5" mark report —
+Source: an official SRM IST "FORMAT TLP5" mark report. **Student names, register numbers
+and the faculty name/id are replaced by fictional ones** (the repository is public); the marks,
+their order, the absentee and the report's summary block are exactly the report's —
 
     Faculty of Engineering and Technology, SRM Institute of Science and Technology, Kattankulathur
     Test FP-I · Academic Year AY2025-26-EVEN · Component Max. Mark 10.00
-    21DCS201P (Design Thinking and Methodology), handled by Dr. Arulalan V (103059)
+    21DCS201P (Design Thinking and Methodology), handled by Dr. Anand Kumar (900001)
 
 The report's own summary block is the independent check every number here is measured against:
 
@@ -15,7 +17,7 @@ The report's own summary block is the independent check every number here is mea
     Pass percentage 96.55  80-89  17
                            90-100 9
 
-**Column mapping, PDF → import file.** The fixture is `tests/fixtures/real_teacher_fp1.csv`
+**Column mapping, PDF → import file.** The fixture is `tests/fixtures/tlp_fp1_sample.csv`
 (and `.xlsx`), carrying three columns:
 
 ======================  ==========================  ==========================================
@@ -33,7 +35,7 @@ PDF column              Import column               Why
 ``Absent`` travels through **verbatim** — ``ABSENT`` is one of the importer's recognised absence
 markers, so nothing had to be reshaped to fit the pipeline and nothing became a zero.
 
-Why this dataset earns its own test: it contains, in real data, every case the project's central
+Why this dataset earns its own test: it contains, in real marks, every case the project's central
 invariant turns on — one **Absent** student, one **genuine 0.00**, two students at **exactly the
 50% pass mark**, one student below it, and 54 above.
 """
@@ -72,8 +74,8 @@ from app.modules.users.models import Role, User
 from tests.conftest import DEFAULT_PASSWORD, UserFactory, auth_headers
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
-CSV_FIXTURE = FIXTURES / "real_teacher_fp1.csv"
-XLSX_FIXTURE = FIXTURES / "real_teacher_fp1.xlsx"
+CSV_FIXTURE = FIXTURES / "tlp_fp1_sample.csv"
+XLSX_FIXTURE = FIXTURES / "tlp_fp1_sample.xlsx"
 
 MAX_MARK = Decimal("10")
 ASSESSMENT_NAME = "FP-I"
@@ -125,11 +127,11 @@ class TestTheFixtureMatchesTheSourceReport:
     def test_absentee_count_and_identity(self) -> None:
         absent = [(reg, name) for reg, name, mark in roster() if mark == "Absent"]
         assert len(absent) == PDF_ABSENTEES
-        assert absent[0][0] == "RA2311003011995"
+        assert absent[0][0] == "RA2399999000002"
 
     def test_one_genuine_zero_distinct_from_the_absentee(self) -> None:
         zeros = [reg for reg, _, mark in roster() if mark != "Absent" and Decimal(mark) == 0]
-        assert zeros == ["RA2411003012527"]
+        assert zeros == ["RA2499999000025"]
 
     def test_two_students_sit_exactly_on_the_pass_mark(self) -> None:
         at_mark = [
@@ -180,12 +182,14 @@ class World:
 
 @pytest.fixture
 def fp1(db_session: Session, make_user: UserFactory) -> World:
-    """The real offering: Dr Arulalan V, 21DCS201P, AY2025-26-EVEN, 58 CSE students, FP-I /10."""
+    """The real offering: Dr Anand Kumar, 21DCS201P, AY2025-26-EVEN, 58 CSE students, FP-I /10."""
     department = Department(code="CSE", name="Computer Science and Engineering")
     db_session.add(department)
     db_session.flush()
 
-    faculty = make_user(Role.FACULTY, email="arulalan.v@srmist.edu.in", full_name="Dr. Arulalan V")
+    faculty = make_user(
+        Role.FACULTY, email="anand.kumar@srmist.edu.in", full_name="Dr. Anand Kumar"
+    )
     term = AcademicTerm(
         code=TERM_CODE,
         name="Even Semester 2025-26",
@@ -310,13 +314,13 @@ class TestDatabaseReconciliation:
         assert len(absent) == PDF_ABSENTEES
         assert absent[0].score is None, "absent must never be stored as a number"
         student = db_session.get(Student, absent[0].student_id)
-        assert student is not None and student.register_number == "RA2311003011995"
+        assert student is not None and student.register_number == "RA2399999000002"
 
     def test_the_genuine_zero_is_stored_as_a_present_zero(
         self, db_session: Session, fp1: World
     ) -> None:
         student = db_session.scalar(
-            select(Student).where(Student.register_number == "RA2411003012527")
+            select(Student).where(Student.register_number == "RA2499999000025")
         )
         assert student is not None
         row = db_session.scalar(
@@ -404,14 +408,14 @@ class TestAttentionOnRealData:
     def test_the_zero_scoring_student_is_flagged_for_performance_not_completion(
         self, db_session: Session, fp1: World
     ) -> None:
-        fired = self.flags(db_session, "RA2411003012527")
+        fired = self.flags(db_session, "RA2499999000025")
         assert AttentionRuleCode.R1_LOW_PERFORMANCE in fired
         assert AttentionRuleCode.R2_FAILED_LATEST in fired
         assert AttentionRuleCode.R6_LOW_COMPLETION not in fired, (
             "they sat the paper and scored 0; that is complete, not missing"
         )
 
-    @pytest.mark.parametrize("register_number", ["RA2411003012530", "RA2411003012533"])
+    @pytest.mark.parametrize("register_number", ["RA2499999000028", "RA2499999000031"])
     def test_exactly_fifty_percent_does_not_fire_the_low_performance_rule(
         self, db_session: Session, fp1: World, register_number: str
     ) -> None:
@@ -420,7 +424,7 @@ class TestAttentionOnRealData:
         assert AttentionRuleCode.R1_LOW_PERFORMANCE not in fired
         assert AttentionRuleCode.R2_FAILED_LATEST not in fired
 
-    @pytest.mark.parametrize("register_number", ["RA2411003012530", "RA2411003012533"])
+    @pytest.mark.parametrize("register_number", ["RA2499999000028", "RA2499999000031"])
     def test_exactly_fifty_percent_is_reported_as_borderline(
         self, db_session: Session, fp1: World, register_number: str
     ) -> None:
@@ -430,7 +434,7 @@ class TestAttentionOnRealData:
     def test_the_absent_student_is_flagged_for_completion_and_not_for_a_score(
         self, db_session: Session, fp1: World
     ) -> None:
-        fired = self.flags(db_session, "RA2311003011995")
+        fired = self.flags(db_session, "RA2399999000002")
         assert AttentionRuleCode.R6_LOW_COMPLETION in fired
         assert AttentionRuleCode.R1_LOW_PERFORMANCE not in fired, (
             "an absence is not a low score; averaging it as 0 is the bug this guards"
@@ -438,7 +442,7 @@ class TestAttentionOnRealData:
         assert AttentionRuleCode.R2_FAILED_LATEST not in fired
 
     def test_a_strong_student_is_not_flagged_at_all(self, db_session: Session, fp1: World) -> None:
-        assert self.flags(db_session, "RA2411003012505") == set()
+        assert self.flags(db_session, "RA2499999000006") == set()
 
     def test_rules_needing_several_assessments_cannot_fire_on_one(
         self, db_session: Session, fp1: World
@@ -527,7 +531,7 @@ class TestAnalyticsOnRealData:
         if fmt == "pdf":
             assert response.content.startswith(b"%PDF")
         if fmt == "csv":
-            # Check whole cells, not substrings: real names contain "nan" (LOKKESH ANAND).
+            # Check whole cells, not substrings: names can contain "nan" (e.g. ANANYA).
             import csv as csvmod
             import io
 
@@ -560,8 +564,8 @@ class TestAnalyticsOnRealData:
         body = client.get(
             f"{fp1.base}/reports/attention", params={"format": "csv"}, headers=fp1.headers
         ).text
-        assert "RA2411003012527" in body, "the zero-scoring student must appear"
-        assert "RA2311003011995" in body, "the absentee must appear"
+        assert "RA2499999000025" in body, "the zero-scoring student must appear"
+        assert "RA2399999000002" in body, "the absentee must appear"
 
 
 class TestAtomicityOnRealData:
@@ -598,7 +602,7 @@ class TestScopeOnRealData:
     def test_another_faculty_member_cannot_see_this_offering(
         self, client: TestClient, fp1: World, make_user: UserFactory
     ) -> None:
-        stranger = make_user(Role.FACULTY, email="not.arulalan@srmist.edu.in")
+        stranger = make_user(Role.FACULTY, email="not.anand@srmist.edu.in")
         for route in ("analytics", "attention", "insights", "interventions"):
             response = client.get(f"{fp1.base}/{route}", headers=auth_headers(stranger))
             assert response.status_code == 404, f"{route} leaked to a stranger"

@@ -5,13 +5,17 @@ from sqlalchemy.orm import Session
 from app.core.errors import BusinessRuleError, NotFoundError, PermissionDeniedError
 from app.core.pagination import Page, PageParams
 from app.db.repository import write_guard
+from app.modules.audit.service import AuditService
 from app.modules.organization.models import (
     AcademicTerm,
     Course,
+    CourseCoordinator,
     CourseOffering,
     Department,
     OfferingFaculty,
     Section,
+    Semester,
+    course_type_from_code,
 )
 from app.modules.organization.repository import (
     CourseRepository,
@@ -41,10 +45,12 @@ from app.modules.organization.schemas import (
 from app.modules.organization.scope import (
     Access,
     OfferingAccess,
+    can_manage_courses,
     can_manage_department,
+    coordinates,
     visible_offerings,
 )
-from app.modules.users.models import Role, User
+from app.modules.users.models import TEACHING_ROLES, Role, User
 from app.modules.users.repository import UserRepository
 
 
@@ -56,6 +62,20 @@ def _apply(entity: object, changes: dict) -> None:
 def _require_department_manager(user: User, department_id: uuid.UUID) -> None:
     if not can_manage_department(user, department_id):
         raise PermissionDeniedError("You can only manage records of your own department.")
+
+
+def _require_course_manager(user: User, department_id: uuid.UUID) -> None:
+    if not can_manage_courses(user, department_id):
+        raise PermissionDeniedError("You can only manage courses of your own department.")
+
+
+def semester_from_code(code: str, name: str = "") -> Semester | None:
+    text = f"{code} {name}".upper()
+    if "EVEN" in text:
+        return Semester.EVEN
+    if "ODD" in text:
+        return Semester.ODD
+    return None
 
 
 def offering_read(offering: CourseOffering) -> OfferingRead:
@@ -141,7 +161,9 @@ class TermService:
         with write_guard(self._session, conflict=f"Term code '{data.code}' already exists."):
             if data.is_current:
                 self._repo.clear_current()
-            term = self._repo.add(AcademicTerm(**data.model_dump()))
+            values = data.model_dump()
+            values["semester"] = values.get("semester") or semester_from_code(data.code, data.name)
+            term = self._repo.add(AcademicTerm(**values))
         self._session.commit()
         return term
 
@@ -190,16 +212,18 @@ class CourseService:
 
     def create(self, data: CourseCreate, *, actor: User) -> Course:
         self._departments.get(data.department_id)
-        _require_department_manager(actor, data.department_id)
+        _require_course_manager(actor, data.department_id)
+        values = data.model_dump()
+        values["course_type"] = values.get("course_type") or course_type_from_code(data.code)
         with write_guard(self._session, conflict=f"Course code '{data.code}' already exists."):
-            course = self._repo.add(Course(**data.model_dump()))
+            course = self._repo.add(Course(**values))
         self._session.commit()
         self._session.refresh(course)
         return course
 
     def update(self, course_id: uuid.UUID, data: CourseUpdate, *, actor: User) -> Course:
         course = self.get(course_id)
-        _require_department_manager(actor, course.department_id)
+        _require_course_manager(actor, course.department_id)
         with write_guard(self._session, conflict=f"Course code '{data.code}' already exists."):
             _apply(course, data.model_dump(exclude_unset=True, exclude_none=True))
         self._session.commit()
@@ -207,10 +231,62 @@ class CourseService:
 
     def delete(self, course_id: uuid.UUID, *, actor: User) -> None:
         course = self.get(course_id)
-        _require_department_manager(actor, course.department_id)
+        _require_course_manager(actor, course.department_id)
         with write_guard(self._session, in_use="Course has offerings; delete those first."):
             self._repo.delete(course)
         self._session.commit()
+
+    # ------------------------------------------------------------ coordinators
+
+    def add_coordinator(self, course_id: uuid.UUID, user_id: uuid.UUID, *, actor: User) -> Course:
+        """Assign a Course Coordinator (ADMIN, or the department's HOD / Academic Head)."""
+        course = self.get(course_id)
+        _require_course_manager(actor, course.department_id)
+        user = UserRepository(self._session).get(user_id)
+        if user is None or not user.is_active:
+            raise NotFoundError("User not found.")
+        if user.role is not Role.COURSE_COORDINATOR:
+            raise BusinessRuleError(
+                "Only users with the Course Coordinator role can coordinate a course; "
+                "change their role first."
+            )
+        if user.department_id != course.department_id:
+            raise BusinessRuleError("The coordinator must belong to the course's department.")
+        if any(c.user_id == user_id for c in course.coordinators):
+            return course
+        course.coordinators.append(
+            CourseCoordinator(course_id=course.id, user_id=user.id, assigned_by_id=actor.id)
+        )
+        AuditService(self._session).record(
+            actor_id=actor.id,
+            entity="course",
+            entity_id=str(course.id),
+            action="coordinator_assign",
+            new={"user_id": str(user.id), "course": course.code},
+        )
+        self._session.commit()
+        self._session.refresh(course)
+        return course
+
+    def remove_coordinator(
+        self, course_id: uuid.UUID, user_id: uuid.UUID, *, actor: User
+    ) -> Course:
+        course = self.get(course_id)
+        _require_course_manager(actor, course.department_id)
+        link = next((c for c in course.coordinators if c.user_id == user_id), None)
+        if link is None:
+            raise NotFoundError("That user does not coordinate this course.")
+        course.coordinators.remove(link)
+        AuditService(self._session).record(
+            actor_id=actor.id,
+            entity="course",
+            entity_id=str(course.id),
+            action="coordinator_remove",
+            old={"user_id": str(user_id), "course": course.code},
+        )
+        self._session.commit()
+        self._session.refresh(course)
+        return course
 
 
 class SectionService:
@@ -309,7 +385,11 @@ class OfferingService:
         course = CourseService(self._session).get(data.course_id)
         TermService(self._session).get(data.term_id)
         SectionService(self._session).get(data.section_id)
-        _require_department_manager(actor, course.department_id)
+        if not (
+            can_manage_courses(actor, course.department_id)
+            or coordinates(self._session, actor, course.id)
+        ):
+            raise PermissionDeniedError("You cannot create offerings of this course.")
         teachers = [self._assignable_faculty(uid) for uid in dict.fromkeys(data.faculty_ids)]
 
         with write_guard(
@@ -357,6 +437,14 @@ class OfferingService:
         faculty = self._assignable_faculty(user_id)
         if self._repo.assignment(offering.id, faculty.id) is None:
             offering.faculty_assignments.append(OfferingFaculty(user_id=faculty.id))
+            AuditService(self._session).record(
+                actor_id=actor.id,
+                entity="offering",
+                entity_id=str(offering.id),
+                action="faculty_assign",
+                new={"user_id": str(faculty.id)},
+                offering_id=offering.id,
+            )
             self._session.commit()
             self._session.refresh(offering)
         return offering
@@ -369,6 +457,14 @@ class OfferingService:
         if assignment is None:
             raise NotFoundError("That user is not assigned to this offering.")
         offering.faculty_assignments.remove(assignment)
+        AuditService(self._session).record(
+            actor_id=actor.id,
+            entity="offering",
+            entity_id=str(offering.id),
+            action="faculty_unassign",
+            old={"user_id": str(user_id)},
+            offering_id=offering.id,
+        )
         self._session.commit()
         self._session.refresh(offering)
         return offering
@@ -377,6 +473,9 @@ class OfferingService:
         user = self._users.get(user_id)
         if user is None:
             raise NotFoundError(f"User {user_id} not found.")
-        if not user.is_active or user.role not in (Role.FACULTY, Role.HOD):
-            raise BusinessRuleError("Only active FACULTY or HOD users can be assigned to teach.")
+        if not user.is_active or user.role not in TEACHING_ROLES:
+            raise BusinessRuleError(
+                "Only active faculty, coordinators, the Academic Head or the HOD can be "
+                "assigned to teach."
+            )
         return user

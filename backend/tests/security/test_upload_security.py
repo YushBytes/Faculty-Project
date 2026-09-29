@@ -122,7 +122,7 @@ class TestRejectedFilesWriteNothing:
     @pytest.mark.parametrize(
         "label,name,content",
         [
-            ("unsupported extension", "marks.pdf", b"%PDF-1.7\n trailing junk"),
+            ("corrupt pdf", "marks.pdf", b"%PDF-1.7\n trailing junk"),
             ("executable renamed to xlsx", "marks.xlsx", ELF_MAGIC + b"\x00" * 64),
             ("windows executable", "marks.csv", PE_MAGIC + b"\x00" * 64),
             ("legacy xls", "marks.xls", MS_OLE_MAGIC + b"\x00" * 64),

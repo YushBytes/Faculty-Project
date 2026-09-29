@@ -73,7 +73,7 @@ def test_user_and_student_changes_are_audited(
     headers = auth_headers(admin)
     client.patch(
         f"/api/v1/users/{faculty.id}",
-        json={"role": "HOD", "department_id": str(cse.id)},
+        json={"role": "COURSE_COORDINATOR", "department_id": str(cse.id)},
         headers=headers,
     )
     client.patch(
@@ -88,7 +88,10 @@ def test_user_and_student_changes_are_audited(
     user_actions = [r.action for r in rows if r.entity == "user"]
     assert sorted(user_actions) == ["activate", "deactivate", "password_reset", "update"]
     role_change = next(r for r in rows if r.entity == "user" and r.action == "update")
-    assert role_change.old_value["role"] == "FACULTY" and role_change.new_value["role"] == "HOD"
+    assert (
+        role_change.old_value["role"] == "FACULTY"
+        and role_change.new_value["role"] == "COURSE_COORDINATOR"
+    )
     assert all("password" not in str(r.new_value or {}) for r in rows)  # never store secrets
     student_log = next(r for r in rows if r.entity == "student")
     assert student_log.action == "deactivate" and student_log.actor_id == hod.id

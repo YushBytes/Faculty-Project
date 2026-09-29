@@ -7,6 +7,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from app.modules.users.models import Role
 
 FullName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+EmployeeCode = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=32, pattern=r"^[A-Za-z0-9-]+$"
+    ),
+]
+Designation = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 # Upper bound keeps Argon2 input reasonable; lower bound per NIST SP 800-63B.
 Password = Annotated[str, Field(min_length=8, max_length=128)]
 
@@ -19,6 +26,8 @@ class UserCreate(BaseModel):
     password: Password
     role: Role
     department_id: uuid.UUID | None = None
+    employee_code: EmployeeCode | None = None
+    designation: Designation | None = None
 
 
 class UserUpdate(BaseModel):
@@ -30,6 +39,8 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     password: Password | None = None
     department_id: uuid.UUID | None = None
+    employee_code: EmployeeCode | None = None
+    designation: Designation | None = None
 
 
 class UserRead(BaseModel):
@@ -40,6 +51,8 @@ class UserRead(BaseModel):
     full_name: str
     role: Role
     department_id: uuid.UUID | None
+    employee_code: str | None = None
+    designation: str | None = None
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime

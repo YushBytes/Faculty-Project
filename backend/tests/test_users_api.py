@@ -43,14 +43,22 @@ class TestAuthorisation:
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "permission_denied"
 
-    def test_hod_can_look_up_but_not_manage_users(
+    def test_hod_can_look_up_but_manages_only_own_department_staff(
         self, client: TestClient, hod: User, faculty: User
     ) -> None:
         headers = auth_headers(hod)
 
         assert client.get(USERS, headers=headers).status_code == 200
         assert client.get(f"{USERS}/{faculty.id}", headers=headers).status_code == 200
-        assert client.post(USERS, json=NEW_USER, headers=headers).status_code == 403
+        # A new faculty member lands in the HOD's own department.
+        created = client.post(USERS, json=NEW_USER, headers=headers)
+        assert created.status_code == 201
+        assert created.json()["department_id"] == str(hod.department_id)
+        # Never above themselves.
+        for role in ("ADMIN", "HOD"):
+            body = {**NEW_USER, "email": f"{role.lower()}.x@srmist.edu.in", "role": role}
+            assert client.post(USERS, json=body, headers=headers).status_code == 403
+        # ``faculty`` has no department: outside the HOD's reach.
         assert (
             client.patch(
                 f"{USERS}/{faculty.id}", json={"full_name": "X"}, headers=headers

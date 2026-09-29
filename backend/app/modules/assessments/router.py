@@ -61,6 +61,22 @@ def create_assessment(
     return service.detail(service.create(offering_id, body, actor=actor))
 
 
+@by_offering.post(
+    "/assessments/apply-scheme",
+    response_model=AssessmentList,
+    summary="Create the SRM assessment components for the course type",
+    description=(
+        "Theory: FT-I..FT-IV + LLT-I (60). Joint: FJ-I..III + LLJ-I/II (60). Project: FP-I/II, "
+        "PBL-I..III, Report and Viva Voce (100). Practical: FL-I..IV + Practical Exam (100). "
+        "Non-credit: FM-I..III (no marks). Components that already exist are left alone."
+    ),
+)
+def apply_scheme(offering_id: uuid.UUID, actor: CurrentUser, db: DB) -> AssessmentList:
+    service = AssessmentService(db)
+    service.apply_scheme(offering_id, actor=actor)
+    return service.list(offering_id, actor=actor)
+
+
 @by_offering.get(
     "/results",
     response_model=OfferingResults,

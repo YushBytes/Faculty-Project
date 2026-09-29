@@ -117,11 +117,14 @@ class TestAttentionIsNotWritable:
         }
         assert writable == set(), f"attention must not be writable over HTTP: {sorted(writable)}"
 
-    def test_attention_is_readable_only_as_part_of_an_offering(self, paths: dict) -> None:
+    def test_attention_is_readable_only_through_a_scope(self, paths: dict) -> None:
+        """One offering's cohort, or the caller's scoped aggregate (read-only, GET)."""
         attention_paths = {path for path in paths if "attention" in path}
-        assert attention_paths == {"/api/v1/offerings/{offering_id}/attention"}, (
-            f"unexpected attention surface: {sorted(attention_paths)}"
-        )
+        assert attention_paths == {
+            "/api/v1/offerings/{offering_id}/attention",
+            "/api/v1/insights/attention",
+        }, f"unexpected attention surface: {sorted(attention_paths)}"
+        assert set(paths["/api/v1/insights/attention"]) == {"get"}
 
 
 class TestSecurityIsDocumented:

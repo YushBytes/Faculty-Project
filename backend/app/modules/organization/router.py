@@ -15,6 +15,7 @@ from app.core.pagination import Page, PageParams, page_params
 from app.db.session import get_db
 from app.modules.auth.dependencies import AdminUser, CurrentUser, require_roles
 from app.modules.organization.schemas import (
+    CoordinatorAssign,
     CourseCreate,
     CourseRead,
     CourseUpdate,
@@ -135,7 +136,7 @@ def list_courses(
 
 
 @courses.post("", response_model=CourseRead, status_code=201, responses=_WRITE)
-def create_course(body: CourseCreate, actor: Manager, db: DB) -> CourseRead:
+def create_course(body: CourseCreate, actor: CurrentUser, db: DB) -> CourseRead:
     return CourseRead.model_validate(CourseService(db).create(body, actor=actor))
 
 
@@ -145,13 +146,34 @@ def get_course(course_id: uuid.UUID, _: CurrentUser, db: DB) -> CourseRead:
 
 
 @courses.patch("/{course_id}", response_model=CourseRead, responses=_WRITE)
-def update_course(course_id: uuid.UUID, body: CourseUpdate, actor: Manager, db: DB) -> CourseRead:
+def update_course(
+    course_id: uuid.UUID, body: CourseUpdate, actor: CurrentUser, db: DB
+) -> CourseRead:
     return CourseRead.model_validate(CourseService(db).update(course_id, body, actor=actor))
 
 
 @courses.delete("/{course_id}", responses=_WRITE, **_NO_CONTENT)
-def delete_course(course_id: uuid.UUID, actor: Manager, db: DB) -> None:
+def delete_course(course_id: uuid.UUID, actor: CurrentUser, db: DB) -> None:
     CourseService(db).delete(course_id, actor=actor)
+
+
+@courses.post("/{course_id}/coordinators", response_model=CourseRead, responses=_WRITE)
+def add_coordinator(
+    course_id: uuid.UUID, body: CoordinatorAssign, actor: CurrentUser, db: DB
+) -> CourseRead:
+    """Assign a Course Coordinator. ADMIN, or the department's HOD or Academic Head."""
+    return CourseRead.model_validate(
+        CourseService(db).add_coordinator(course_id, body.user_id, actor=actor)
+    )
+
+
+@courses.delete("/{course_id}/coordinators/{user_id}", response_model=CourseRead, responses=_ONE)
+def remove_coordinator(
+    course_id: uuid.UUID, user_id: uuid.UUID, actor: CurrentUser, db: DB
+) -> CourseRead:
+    return CourseRead.model_validate(
+        CourseService(db).remove_coordinator(course_id, user_id, actor=actor)
+    )
 
 
 # ------------------------------------------------------------------ sections
@@ -222,7 +244,7 @@ def list_offerings(
 
 
 @offerings.post("", response_model=OfferingRead, status_code=201, responses=_WRITE)
-def create_offering(body: OfferingCreate, actor: Manager, db: DB) -> OfferingRead:
+def create_offering(body: OfferingCreate, actor: CurrentUser, db: DB) -> OfferingRead:
     return offering_read(OfferingService(db).create(body, actor=actor))
 
 
@@ -239,20 +261,20 @@ def update_offering(
 
 
 @offerings.delete("/{offering_id}", responses=_WRITE, **_NO_CONTENT)
-def delete_offering(offering_id: uuid.UUID, actor: Manager, db: DB) -> None:
+def delete_offering(offering_id: uuid.UUID, actor: CurrentUser, db: DB) -> None:
     OfferingService(db).delete(offering_id, actor=actor)
 
 
 @offerings.post("/{offering_id}/faculty", response_model=OfferingRead, responses=_WRITE)
 def assign_faculty(
-    offering_id: uuid.UUID, body: FacultyAssign, actor: Manager, db: DB
+    offering_id: uuid.UUID, body: FacultyAssign, actor: CurrentUser, db: DB
 ) -> OfferingRead:
     return offering_read(OfferingService(db).assign_faculty(offering_id, body.user_id, actor=actor))
 
 
 @offerings.delete("/{offering_id}/faculty/{user_id}", response_model=OfferingRead, responses=_ONE)
 def unassign_faculty(
-    offering_id: uuid.UUID, user_id: uuid.UUID, actor: Manager, db: DB
+    offering_id: uuid.UUID, user_id: uuid.UUID, actor: CurrentUser, db: DB
 ) -> OfferingRead:
     return offering_read(OfferingService(db).unassign_faculty(offering_id, user_id, actor=actor))
 

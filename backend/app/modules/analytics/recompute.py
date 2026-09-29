@@ -71,6 +71,11 @@ def recompute_offering(
         computed_at=stamp,
         triggered_by_assessment_id=assessment_id,
     )
+    # The materialised summary that course/department/institution views pool from, in the
+    # same transaction, so the hierarchy's dashboards move with the results that changed.
+    from app.modules.overview.summary import SummaryStore
+
+    SummaryStore(session).refresh(offering_id)
     return RecomputeSummary(
         offering_id=offering_id,
         assessment_id=assessment_id,

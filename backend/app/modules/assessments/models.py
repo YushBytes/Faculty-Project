@@ -40,8 +40,22 @@ from app.modules.students.models import Student
 
 
 class AssessmentType(StrEnum):
+    """Assessment families. The SRM component codes (regulation 2021) are first-class:
+    FT/FJ/FL formative tests of theory, joint and practical courses, LLT/LLJ life-long
+    learning, FP unit tests and PBL project components of PBL courses, FM non-credit
+    assessments. The generic ones remain for other institutions and older data."""
+
     CT = "CT"  # cycle test
-    FT = "FT"  # final / formative test
+    FT = "FT"  # formative test (theory)
+    FJ = "FJ"  # formative test (joint course)
+    FL = "FL"  # formative experiments (practical course)
+    FP = "FP"  # unit test (project based learning course)
+    FM = "FM"  # non-credit course assessment
+    LLT = "LLT"  # life-long learning (theory)
+    LLJ = "LLJ"  # life-long learning (joint course)
+    PBL = "PBL"  # project based learning review
+    VIVA = "VIVA"  # report and viva voce
+    PRACTICAL = "PRACTICAL"  # practical examination
     QUIZ = "QUIZ"
     ASSIGNMENT = "ASSIGNMENT"
     LAB = "LAB"

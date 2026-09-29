@@ -76,6 +76,8 @@ class ImportBatchRead(BaseModel):
     expires_at: datetime
     committed_at: datetime | None
     committed_by_id: uuid.UUID | None
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
+    upload_group_id: uuid.UUID | None = None
 
 
 class ImportPreview(BaseModel):
@@ -119,3 +121,44 @@ class ConfirmResult(BaseModel):
     unchanged: int
     assessments: list[uuid.UUID]
     summary: dict[str, Any]
+
+
+# ------------------------------------------------------------------ multi-file TLP uploads
+
+TlpFileStatus = Literal[
+    "valid", "warning", "error", "rejected", "duplicate", "skipped", "confirmed", "discarded"
+]
+
+
+class TlpFileResult(BaseModel):
+    """One file of a multi-file upload.
+
+    ``rejected``  could not be staged at all (unreadable, not routable); nothing was stored
+    ``error``     staged, but has blocking errors to fix or exclude before confirming
+    ``warning``   staged, confirmable, with warnings to review
+    ``valid``     staged, confirmable, nothing to review
+    ``duplicate`` staged, but this exact file was already imported into the offering
+    ``skipped``   the same file appeared twice in this upload; the copy was not staged
+    ``confirmed`` written to results
+    ``discarded`` staged and then discarded
+    """
+
+    file_name: str
+    status: TlpFileStatus
+    message: str | None = None
+    batch_id: uuid.UUID | None = None
+    offering_id: uuid.UUID | None = None
+    offering_label: str | None = None
+    section_name: str | None = None
+    assessment_id: uuid.UUID | None = None
+    assessment_name: str | None = None
+    routed_by: str | None = None
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    issues: list[IssueRead] = Field(default_factory=list)
+
+
+class TlpUploadRead(BaseModel):
+    group_id: uuid.UUID
+    files: list[TlpFileResult]
+    counts: dict[str, int]

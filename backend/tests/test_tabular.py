@@ -50,7 +50,8 @@ def test_values_outside_header_rejected() -> None:
 @pytest.mark.parametrize(
     ("name", "content", "message"),
     [
-        ("m.pdf", b"%PDF-1.7", "Unsupported file type"),
+        ("m.pdf", b"%PDF-1.7", "could not be read as a PDF"),
+        ("m.pages", b"not a spreadsheet", "Unsupported file type"),
         ("m.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest", "Legacy .xls"),
         ("m.csv", b"\xff\xfe\x00bad", "not valid UTF-8"),
         ("m.docx", b"PK\x03\x04rest", "not an .xlsx"),
