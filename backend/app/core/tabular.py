@@ -8,6 +8,7 @@ typed validation; nothing is coerced to a number or zero here.
 import csv
 import io
 import re
+import zipfile
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -93,7 +94,17 @@ def _read_csv(content: bytes) -> tuple[list[list[str | None]], None]:
 def _read_xlsx(content: bytes) -> tuple[list[list[str | None]], str]:
     try:
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    except (InvalidFileException, KeyError, OSError, ValueError) as exc:
+    except (
+        InvalidFileException,
+        KeyError,
+        OSError,
+        ValueError,
+        # A truncated or damaged .xlsx still carries the ZIP magic, so detect_file_type accepts
+        # it and openpyxl raises BadZipFile here. It derives straight from Exception -- not from
+        # OSError or ValueError -- so without naming it an interrupted upload escapes as a 500
+        # instead of the 422 every other unreadable file gets.
+        zipfile.BadZipFile,
+    ) as exc:
         raise UnsupportedFileError("The file could not be read as an .xlsx workbook.") from exc
     sheet = workbook.worksheets[0]
     rows = [[_cell(v) for v in row] for row in sheet.iter_rows(values_only=True)]

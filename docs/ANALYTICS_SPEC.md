@@ -1,7 +1,7 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 10 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads, and the deferred persistence delivered: `attention_flags` (D6), `interventions` / `intervention_students` / `intervention_reasons` (D5), migration `0007`, and the real C4 recompute.
+**Status:** Phase 11 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads, and the deferred persistence delivered: `attention_flags` (D6), `interventions` / `intervention_students` / `intervention_reasons` (D5), migration `0007`, and the real C4 recompute. Phase 11 added the integration, security and schema-integrity layers and a CI pipeline.
 **Last updated:** 2026-09-29
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
@@ -1115,3 +1115,18 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 **Synchronisation.** A rule that fires with no live row inserts one (`open`); one that still fires has its value, threshold and message refreshed in place, keeping `created_at` and any `acknowledged` status; one that no longer fires becomes `resolved` with a `resolved_at`. Recomputing unchanged data therefore inserts nothing, and a partial unique index on `(offering_id, student_id, rule_code) WHERE status <> 'resolved'` makes that a database guarantee rather than an assumption about interleaving.
 
 **No stored outcomes.** Outcome measurement stays in the Phase 6 engine. An outcome changes the moment a new assessment lands, so a stored copy would be a second answer that disagrees with the first.
+
+**Phase 11 delivered:** integration, security and production hardening — no new product features. 196 tests added, 1,842 in total (1 skipped), 0 failures.
+
+| Layer | What it proves |
+|---|---|
+| `tests/e2e/test_scenarios.py` | the four mandatory journeys: full faculty path (login → import → recompute → analytics → attention → intervention → second assessment → outcome → report → CSV/XLSX/PDF); a rejected import leaving results, analytics and attention byte-identical; a corrected mark resolving its flag in place with history kept and no duplicate; a new assessment raising a flag that engine, API, persistence and report all agree on |
+| `tests/e2e/test_invariants.py` | integration invariants: no NaN or Infinity in any response (parsed with a strict constant hook), insufficient data stays explicit, absent/exempt carry no percentage and are not averaged as zero, a genuine 0 stays 0, all seven rules fire in one cohort and every stored row matches the API field for field, deterministic ordering, no causal wording in any export |
+| `tests/security/` | out-of-scope reads are *byte-identical* to nonexistent ones across every offering-scoped route (a 403 would itself be the leak); cross-offering writes, stolen flag ids and foreign students refused; SQL and script payloads stored verbatim and executing nothing; the upload matrix (renamed executables, oversized, truncated workbooks, excessive rows/columns) rejected with zero writes |
+| `tests/test_api_contract.py` | the OpenAPI document: every served route documented, authentication declared, no writable attention surface, no published schema carrying a secret |
+| `tests/test_schema_integrity.py` | the migrated schema read back from PostgreSQL: delete rules, the partial unique index, enum labels against their Python enums, and constraints that genuinely reject bad rows |
+| `tests/test_query_budget.py` | query **shape** rather than speed |
+
+**Measured, not claimed.** `/analytics`, `/attention` and `/insights` each issue **6 SQL statements for a 5-student cohort and the same 6 for 30** — the read path does not scale in queries. Recompute for one offering: 12 statements, and no statement mentions another offering. Measuring five interventions' outcomes: 11 statements. Wall-clock times (110–260 ms) were observed on a development laptop against a container and are **not** a latency benchmark; the blueprint's p95 target has not been measured and is not claimed.
+
+**Defect found and fixed in Phase 11.** `app/core/tabular.py` caught `(InvalidFileException, KeyError, OSError, ValueError)` around `load_workbook`. `zipfile.BadZipFile` derives straight from `Exception`, so a **truncated or damaged `.xlsx`** — an interrupted upload, which still carries the ZIP magic and so passes file-type detection — escaped as an HTTP 500 instead of the 422 every other unreadable file receives. `BadZipFile` is now named in the handler.

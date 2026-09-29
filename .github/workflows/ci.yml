@@ -1,0 +1,74 @@
+# Backend CI: lint, format check, and the full test suite against real PostgreSQL.
+#
+# The suite never runs on SQLite. Tests build their schema by running Alembic and each test runs
+# inside a rolled-back transaction, so a real PostgreSQL 16 service is a requirement rather than a
+# convenience — and the service below is deliberately the same major version as production
+# (docker-compose.yml pins postgres:16-alpine).
+#
+# The service credentials match the documented defaults in `.env.example`, so
+# `tests/conftest.py` resolves TEST_DATABASE_URL from its own fallback and CI needs no secrets.
+# The suite creates and drops `acadlytics_test` plus a scratch migration database, so the role
+# needs CREATEDB; the user created by the postgres image is a superuser and has it.
+
+name: backend
+
+on:
+  push:
+    branches: [backend, main]
+  pull_request:
+    branches: [backend, main]
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: acadlytics
+          POSTGRES_PASSWORD: acadlytics
+          POSTGRES_DB: acadlytics
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U acadlytics -d acadlytics"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the version the project is developed against; pyproject allows >=3.11.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Test
+        run: pytest -q

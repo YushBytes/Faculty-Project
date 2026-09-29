@@ -136,6 +136,24 @@ Shared fixtures in `tests/conftest.py`: `db_session` (rolled back after each tes
 `client`, `make_user(role, ...)`, `admin` / `hod` / `faculty`, `auth_headers(user)`,
 `login(client, email)`.
 
+### Layers
+
+| Where | What it covers |
+|---|---|
+| `tests/analytics/`, `tests/reports/` | the pure engine and report builders, against hand-computed fixtures; no database |
+| `tests/test_<module>*.py` | one module's API and models: auth, RBAC, organisation, students, assessments, results, imports, audit |
+| `tests/api/` | the analytics service and routers with the platform read stubbed |
+| `tests/e2e/` | whole-system journeys over HTTP: login, import, recompute, analytics, attention, intervention, outcome, report, export — plus the integration invariant sweep (no NaN/Infinity, absent/missing/exempt are never zero, R1–R7 agree across engine, API, persistence and report) |
+| `tests/security/` | authorization and IDOR across every offering-scoped route, hostile input, and upload validation |
+| `tests/test_api_contract.py` | the OpenAPI document: every route documented, nothing internal published, attention not writable |
+| `tests/test_schema_integrity.py` | the migrated schema itself: foreign keys and delete rules, the partial unique index, enum labels against their Python enums, constraints that actually reject bad rows |
+| `tests/test_query_budget.py` | query **shape**: a read must not issue more SQL for a bigger cohort |
+
+CI runs lint, the format check and the whole suite against a `postgres:16-alpine` service on
+every push and pull request to `backend` and `main` (`.github/workflows/ci.yml`). It needs no
+secrets: the service credentials are the documented defaults, so `tests/conftest.py` resolves
+`TEST_DATABASE_URL` from its own fallback.
+
 ## API conventions
 
 - Base path `/api/v1`; `GET /health` is unversioned (200 ok / 503 degraded, reports the
