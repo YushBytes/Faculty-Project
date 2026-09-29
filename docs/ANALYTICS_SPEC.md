@@ -1,8 +1,8 @@
 # ACADLYTICS — Analytics Specification
 
 **Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
-**Status:** Phase 9 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads. Attention flags and intervention outcomes are computed per request and **still not persisted** (D5/D6 tables and the real C4 recompute wait on a database — Phase 5b/6b).
-**Last updated:** 2026-09-26
+**Status:** Phase 10 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads, and the deferred persistence delivered: `attention_flags` (D6), `interventions` / `intervention_students` / `intervention_reasons` (D5), migration `0007`, and the real C4 recompute.
+**Last updated:** 2026-09-29
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
 
 ---
@@ -443,9 +443,9 @@ Response models **are** the analytics contracts, so the OpenAPI document at `/do
 
 > **Defect fixed here:** `SeriesPoint` used a plain `Decimal`, so a student's score serialised as the *string* `"45.00"` while every mean beside it was the number `45.0`. It now uses `JsonDecimal` like every other published number. Python-side values are unchanged — the type only affects JSON rendering.
 
-#### Still deferred
+#### Persistence (delivered in Phase 10)
 
-Intervention and attention **persistence remain deferred** (D5/D6), and the C4 hook is still the platform's no-op. The service exposes `intervention_outcomes(...)` taking caller-supplied records, so the outcome analytics are reachable the moment that storage lands, but there are no write endpoints and no Agent 2 tables were created to fake it.
+Attention flags and interventions are now stored (D5/D6) and the C4 hook is the real implementation. `intervention_outcomes(...)` still takes caller-supplied records — that is what lets the outcome analytics be proved against fixtures with no database — and `GET /offerings/{id}/interventions/outcomes` passes the stored ones in.
 
 ### Reporting and export (Phase 7)
 
@@ -1077,8 +1077,8 @@ Phase 1 is complete **against the data that exists**. These are needed before th
 | `assessment_results` (nullable `score` + `status`) — D2 | every analytic on real data | not yet migrated |
 | `course_offerings.config` JSONB — D3 | the offering-override layer | `pass_mark_percent` exists; `config` does not, so the layer resolves empty |
 | department `settings` table — D4 | the department layer | does not exist; resolves empty |
-| `interventions`, `intervention_students` — D5 | persisting interventions; contract 10 computes from them in memory today | not yet migrated |
-| `attention_flags` — D6 | flag persistence and history | not yet migrated |
+| `interventions`, `intervention_students` — D5 | persisting interventions | migrated in `0007`, with `intervention_reasons` for the reason trail |
+| `attention_flags` — D6 | flag persistence and history | migrated in `0007`; resolved, never deleted, so history survives recompute |
 | cohort read method — D8 | `SnapshotSource` implementation | Phase 4 |
 | seed dataset with the C11 patterns — D11 | end-to-end verification | not yet delivered |
 
@@ -1098,7 +1098,7 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 5 delivered:** F18 — the R1–R7 engine over the Phase 2/3 facts, `StudentAttention` (contract 14) with a derived verdict, cohort counts (flags by severity, students by rule, students requiring attention), `ClassHealth` and `ChangeAnalysis` integration behind `evaluate_attention`, and the evaluated-versus-not-evaluated distinction. 924 pure tests.
 
-**Not in Phase 5, deliberately:** `attention_flags` storage (D6), migration `0007`, and the real C4 `recompute` implementation. They need a database to test the write path and the migration chain, and none is reachable in the current environment — deferred to **Phase 5b**.
+**Not in Phase 5, deliberately:** `attention_flags` storage (D6), migration `0007`, and the real C4 `recompute` implementation. They needed a database to test the write path and the migration chain, and none was reachable at the time — delivered in **Phase 10**.
 
 **Phase 6 delivered:** F20 — the `Intervention` record (who, what, when, why), sequence-based pre/post windows, per-student pairing, target-against-peer observed change, `InterventionOutcomeSummary` (contract 15), and a causal-language screen extended to the vocabulary an intervention report must never reach for. 1,000 pure tests.
 
@@ -1108,4 +1108,10 @@ The resolver already accepts both stored override layers, so when D3 and D4 land
 
 **Phase 9 delivered:** `AnalyticsService` and five `/api/v1` endpoints serving class analytics, student analytics, attention, insights and report downloads — reusing the platform's scope, computing analytics once per request, and generating the OpenAPI document from the analytics contracts themselves. 60 API tests, 1,278 pure tests in total.
 
-**Next:** the deferred persistence — D5 interventions, D6 attention flags and the real C4 recompute — once PostgreSQL is available. The service and endpoints above are written so that storage slots in beneath them without changing a response.
+**Phase 10 delivered:** the deferred persistence, against real PostgreSQL. `attention_flags` (D6) materialised from the engine by the C4 recompute hook; `interventions`, `intervention_students` and `intervention_reasons` (D5); migration `0007`; and four intervention endpoints. 44 database-backed tests, 1,643 in total.
+
+**Where the truth lives.** The analytics engine stays the single source of truth for attention: `GET /offerings/{id}/attention` and every report still compute from the current snapshot, so no response changed in Phase 10. The table is a *materialised* copy maintained by recompute — it exists for history (D6), for the dashboard index `attention_flags(offering_id, status)` (D9), and so an intervention reason can point by foreign key at the flag that prompted it. It is deliberately **not** readable or writable over HTTP: two endpoints answering "what is firing?" would be two sources of truth, and a client-created flag would be indistinguishable from a rule that actually fired.
+
+**Synchronisation.** A rule that fires with no live row inserts one (`open`); one that still fires has its value, threshold and message refreshed in place, keeping `created_at` and any `acknowledged` status; one that no longer fires becomes `resolved` with a `resolved_at`. Recomputing unchanged data therefore inserts nothing, and a partial unique index on `(offering_id, student_id, rule_code) WHERE status <> 'resolved'` makes that a database guarantee rather than an assumption about interleaving.
+
+**No stored outcomes.** Outcome measurement stays in the Phase 6 engine. An outcome changes the moment a new assessment lands, so a stored copy would be a second answer that disagrees with the first.

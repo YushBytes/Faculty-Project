@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+import app.modules.analytics.recompute  # noqa: F401  (installs the C4 hook)
 from app.core.errors import ErrorResponse, NotFoundError
 from app.db.session import get_db
 from app.modules.analytics.service import (

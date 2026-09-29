@@ -51,6 +51,10 @@ class StubService(AnalyticsService):
         self._visible = {OFFERING} if visible is None else visible
         self.reads = 0
 
+    def stored_interventions(self, offering_id):  # noqa: ANN001, ANN201
+        """The module's other SQL read, stubbed too: nothing recorded, so the report is empty."""
+        return ()
+
     def context(self, offering_id, *, actor, published_only=True, include_dropped=False):  # noqa: ANN001, ANN201
         if offering_id not in self._visible:
             # Exactly what the platform does: out of scope and non-existent are one answer.

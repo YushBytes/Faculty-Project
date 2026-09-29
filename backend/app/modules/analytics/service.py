@@ -66,6 +66,7 @@ from app.modules.analytics.core.profile import student_profile
 from app.modules.analytics.core.rules import AttentionRuleCode, FlagSeverity
 from app.modules.analytics.core.segmentation import student_segment
 from app.modules.analytics.repository import AnalyticsRepository, OfferingContext
+from app.modules.interventions.repository import InterventionRepository
 from app.modules.reports.builders import (
     attention_report,
     class_report,
@@ -107,6 +108,7 @@ class AnalyticsService:
     """Everything the API needs from one offering, computed from one read."""
 
     def __init__(self, session: Session) -> None:
+        self._session = session
         self._repository = AnalyticsRepository(session)
 
     # ------------------------------------------------------------------ loading
@@ -130,6 +132,16 @@ class AnalyticsService:
             published_only=published_only,
             include_dropped=include_dropped,
         )
+
+    def stored_interventions(self, offering_id: uuid.UUID) -> tuple[Intervention, ...]:
+        """Interventions recorded for this offering (D5), as the analytics input contract.
+
+        A seam alongside :meth:`context`: this is the module's only other SQL read, so a test
+        that substitutes the platform read substitutes this one too and still exercises the real
+        report building. Scope is the caller's responsibility — every path that reaches this has
+        already resolved the offering through ``context``.
+        """
+        return InterventionRepository(self._session).contracts_for_offering(offering_id)
 
     def _student(self, snapshot: OfferingSnapshot, student_id: uuid.UUID) -> StudentRef:
         """Resolve a student *within this offering*.
@@ -271,10 +283,9 @@ class AnalyticsService:
     ) -> tuple[tuple[InterventionOutcome, ...], tuple[GeneratedInsight, ...]]:
         """Observed outcomes for interventions **supplied by the caller**.
 
-        Interventions are not stored yet (dependency D5), so there is no endpoint that lists
-        them and none that creates one. This exists so the outcome analytics are reachable
-        the moment that storage lands: the service takes the records, the engine measures
-        them, and nothing here would change.
+        Kept caller-supplied now that storage exists (D5): the engine measures whatever records
+        it is handed, which is what lets the outcome analytics be proved against fixtures with no
+        database. ``/offerings/{id}/interventions/outcomes`` passes the stored ones in.
         """
         stamp = generated_at or datetime.now(UTC)
         loaded = self.context(offering_id, actor=actor)
@@ -316,9 +327,15 @@ class AnalyticsService:
                 self._student(snapshot, student_id)
                 return student_report(snapshot, student_id, thresholds, generated_at=stamp)
             case ReportKind.INTERVENTION_OUTCOME:
-                # Interventions are not stored yet (D5); with none to measure, the report is
-                # its own empty case rather than a fabricated one.
-                return intervention_report(snapshot, (), thresholds, generated_at=stamp)
+                # Stored interventions (D5) are read through their own repository, which maps
+                # rows onto the analytics input contract. An offering with none recorded still
+                # renders: the report's empty case, never a fabricated one.
+                return intervention_report(
+                    snapshot,
+                    self.stored_interventions(offering_id),
+                    thresholds,
+                    generated_at=stamp,
+                )
         raise NotFoundError(f"Unknown report type {kind}.")
 
     def export(self, report: Report, export_format: str) -> tuple[bytes, str, str]:

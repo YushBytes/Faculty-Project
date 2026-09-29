@@ -121,8 +121,9 @@ Edge cases present in real use and in the seed: an offering with no assessments 
 ```python
 # app/core/recompute.py
 recompute(session: Session, assessment_id: uuid.UUID) -> None
-set_recompute(fn)        # install your implementation (call once at import time)
-reset_recompute()        # back to the no-op (tests)
+install_recompute(fn)    # production wiring: install your implementation (once, at import)
+set_recompute(fn)        # temporary replacement, primarily for tests
+reset_recompute()        # restore the installed production implementation
 ```
 
 Called **inside the writer's transaction, after the results are flushed and before commit**, once
@@ -144,9 +145,14 @@ Install it where your module is imported, e.g. at the bottom of
 whenever the app starts:
 
 ```python
-from app.core.recompute import set_recompute
-set_recompute(recompute_assessment)
+from app.core.recompute import install_recompute
+install_recompute(recompute_assessment)
 ```
+
+Use `install_recompute` for that wiring, not `set_recompute`: it makes your implementation the
+baseline `reset_recompute()` returns to. `set_recompute` only replaces the hook for the caller's
+lifetime, so a test that borrows it (`tests/test_results_api.py`,
+`tests/test_import_atomicity.py`) cannot leave analytics disabled for whatever runs next.
 
 Scripts that do not import the API (`app/cli.py`) load `app.db.models` only — if your hook must
 run there too, import it from your models module as well.
