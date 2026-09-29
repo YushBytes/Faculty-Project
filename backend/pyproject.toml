@@ -22,6 +22,7 @@ dependencies = [
 dev = [
     "pytest>=8",
     "httpx2>=2.13",  # required by Starlette's TestClient (httpx is deprecated there)
+    "python-dotenv>=1.0",  # conftest.py exports .env so a bare pytest picks up local config
     "ruff>=0.6",
 ]
 
