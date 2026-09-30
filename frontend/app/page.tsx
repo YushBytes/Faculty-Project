@@ -1,68 +1,91 @@
 import Link from "next/link";
-import { ArrowDown, ArrowRight, ArrowUpRight, BarChart3, ChevronRight, CircleDot, FileSpreadsheet, Layers3, ShieldCheck, Sparkles } from "lucide-react";
-import { AnimatedCounter, BlurReveal, CursorSpotlight, FadeUp, MagneticButton, MeshBackground, TextReveal, TiltCard } from "@/components/animations/motion-primitives";
-import { ScrollStory } from "@/components/sections/scroll-story";
-import { SocialProof } from "@/components/sections/social-proof";
+import { ArrowRight, BarChart3, FileCheck2, FileSpreadsheet, GraduationCap, HeartHandshake, Layers3, ShieldAlert, ShieldCheck } from "lucide-react";
+import { FadeUp, MagneticButton, TextReveal, TiltCard } from "@/components/animations/motion-primitives";
 
-const steps = [
-  { number: "01", title: "Bring the marks you already have", body: "Import a spreadsheet, review every row, and confirm only when the data is ready." },
-  { number: "02", title: "See what changed", body: "Compare assessment outcomes across your classes with clear, traceable summaries." },
-  { number: "03", title: "Follow through", body: "Record an intervention, then review performance after the next assessment." },
+const features = [
+  { icon: FileSpreadsheet, title: "Imports the TLP reports you already have", body: "SRM TLP5 mark reports as Excel, CSV or PDF. Each file is checked against the course, semester, test name and component maximum, previewed, corrected and only then written." },
+  { icon: BarChart3, title: "One analytics engine for every level", body: "Class, section, course, faculty, department and institution views pool the same per-student results. The dashboard and the downloaded report never disagree." },
+  { icon: ShieldAlert, title: "Attention you can explain", body: "Seven deterministic rules — low performance, failed latest, sharp decline and more — each with its evidence. No opaque risk score." },
+  { icon: HeartHandshake, title: "Interventions with observed outcomes", body: "Record the support given and see what happened at the next assessment, alongside peers — reported, never claimed as cause." },
+  { icon: FileCheck2, title: "Reports in PDF, Excel and CSV", body: "Presentation-ready reports for a class, section, course, coordinator, department or the institution, for either semester or the full year." },
+  { icon: ShieldCheck, title: "Absent is not zero", body: "Absent, exempt and missing marks are kept apart from a real 0 everywhere — in storage, analytics, charts and exports." },
 ];
 
-export default function Home() {
+const hierarchy = [
+  ["Administrator", "The whole institution", "01"],
+  ["Head of Department", "Every section, course and faculty member of the department", "02"],
+  ["Academic Head", "The course portfolio and its coordinators", "03"],
+  ["Course Coordinator", "One course across every section and faculty member", "04"],
+  ["Faculty", "Their own classes and students", "05"],
+];
+
+export default function Landing() {
   return (
     <main className="landing">
-      <nav className="landing-nav" aria-label="Main navigation">
-        <Link className="brand" href="/" aria-label="ACADLYTICS home"><span className="brand-mark"><CircleDot size={18} /></span> ACADLYTICS</Link>
-        <div className="landing-links"><a href="#product">Product</a><a href="#workflow">How it works</a><a href="#principles">Principles</a></div>
-        <div className="nav-actions"><Link className="nav-login" href="/login">Log in</Link><Link className="button button-primary button-small" href="/dashboard">Explore demo <ArrowUpRight size={15} /></Link></div>
-      </nav>
+      <header className="l-nav">
+        <Link className="brand" href="/"><span className="brand-mark"><GraduationCap size={19} /></span>ACADLYTICS</Link>
+        <nav aria-label="Sections"><a href="#product">Product</a><a href="#hierarchy">Hierarchy</a><a href="#workflow">Workflow</a></nav>
+        <div className="right"><Link className="btn btn-primary" href="/login">Sign in <ArrowRight size={16} /></Link></div>
+      </header>
 
-      <section className="hero-wrap">
-        <MeshBackground />
-        <CursorSpotlight />
-        <div className="hero-copy">
-          <FadeUp delay={0.05}><div className="eyebrow"><span className="eyebrow-pulse" /> SRM INSTITUTE OF SCIENCE AND TECHNOLOGY <i className="landing-eyebrow-divider" /> A clearer view of class performance</div></FadeUp>
-          <h1 className="hero-title"><span className="hero-title-line"><TextReveal delay={0.12}>Make every</TextReveal></span><span className="hero-title-line"><TextReveal delay={0.24}><span className="hero-accent">assessment</span></TextReveal></span><span className="hero-title-line"><TextReveal delay={0.36}>count.</TextReveal></span></h1>
-          <BlurReveal delay={0.33}><p className="hero-description">A focused workspace for faculty to review assessment results, spot students who need attention, and measure what happens next.</p></BlurReveal>
-          <FadeUp delay={0.42}><div className="hero-actions"><MagneticButton><Link className="button button-primary hero-primary-cta" href="/dashboard">Open the workspace <ArrowRight size={16} /></Link></MagneticButton><a className="text-link" href="#workflow">See how it works <ArrowDown size={15} /></a></div></FadeUp>
-          <FadeUp delay={0.53}><div className="hero-note"><ShieldCheck size={15} /> Clear data. Traceable decisions. Faculty-led action.</div></FadeUp>
+      <section className="l-hero">
+        <div>
+          <FadeUp><span className="l-kicker"><i /> SRM Institute of Science and Technology</span></FadeUp>
+          <h1>
+            <TextReveal>Academic performance,</TextReveal><br />
+            <TextReveal delay={0.12}><span className="hl">clearly measured.</span></TextReveal>
+          </h1>
+          <FadeUp delay={0.2}><p className="lead">From the TLP marks each faculty member uploads to the view the HOD presents — one institutional system for ingestion, analytics, attention, interventions and reports.</p></FadeUp>
+          <FadeUp delay={0.3}><div className="cta"><MagneticButton><Link className="btn btn-primary" href="/login">Open the workspace <ArrowRight size={17} /></Link></MagneticButton><a className="btn" href="#workflow">How it works</a></div></FadeUp>
         </div>
-        <div className="hero-visual" id="product" aria-label="Illustrative class performance dashboard preview">
-          <div className="visual-orbit orbit-a" /><div className="visual-orbit orbit-b" />
-          <TiltCard className="preview-tilt"><div className="preview-window">
-            <div className="preview-top"><div className="window-dots"><i /><i /><i /></div><span>ACADEMIC OVERVIEW</span><span className="live-label"><b /> DEMO DATA</span></div>
-            <div className="preview-content">
-              <div className="preview-heading"><div><span className="micro-label">MONDAY, 26 SEPTEMBER</span><h2>Good morning, Dr. Rao</h2></div><div className="avatar">AR</div></div>
-              <div className="preview-stats"><div><span>ASSESSMENTS</span><strong><AnimatedCounter value="08" /></strong><small>Across 3 courses</small></div><div><span>STUDENTS</span><strong><AnimatedCounter value="124" /></strong><small>Active this term</small></div><div><span>NEEDS REVIEW</span><strong className="warning-number"><AnimatedCounter value="12" /></strong><small>Below threshold</small></div></div>
-              <div className="preview-chart-head"><div><b>Assessment average</b><small>Recent assessments · illustrative</small></div><span>+4.2 pts</span></div>
-              <div className="chart-art"><div className="chart-grid"><i /><i /><i /><i /></div><svg viewBox="0 0 560 136" role="img" aria-label="Illustrative assessment average trend"><defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#42d6ca" stopOpacity=".23"/><stop offset="1" stopColor="#42d6ca" stopOpacity="0"/></linearGradient></defs><path d="M0 104 C48 88 64 99 104 76 S165 87 205 65 S270 88 309 54 S370 70 410 45 S471 65 511 30 S540 34 560 15 L560 136 L0 136Z" fill="url(#area)"/><path d="M0 104 C48 88 64 99 104 76 S165 87 205 65 S270 88 309 54 S370 70 410 45 S471 65 511 30 S540 34 560 15" fill="none" stroke="#55e1d1" strokeWidth="2.2"/><circle cx="410" cy="45" r="4" fill="#0b1116" stroke="#55e1d1" strokeWidth="2"/></svg><div className="chart-months"><span>WEEK 01</span><span>WEEK 02</span><span>WEEK 03</span><span>WEEK 04</span><span>WEEK 05</span></div></div>
-              <div className="preview-footer"><div className="mini-pill"><span className="pill-dot" /> Data checked</div><span>Updated just now</span></div>
+        <FadeUp delay={0.15}>
+          <TiltCard>
+            <div className="l-preview" aria-label="Illustration of the assessment trend view">
+              <div className="bar"><i /><i /><i /><span>Course overview · illustration</span></div>
+              <svg viewBox="0 0 560 250" role="img" aria-label="Illustrative trend across four assessments with a dip at the second">
+                <defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0d7a69" stopOpacity=".22" /><stop offset="1" stopColor="#0d7a69" stopOpacity="0" /></linearGradient></defs>
+                {[40, 90, 140, 190].map((y) => <line key={y} x1="30" x2="540" y1={y} y2={y} stroke="#eef1f5" />)}
+                <path d="M40 92 L200 150 L360 104 L520 78 L520 220 L40 220 Z" fill="url(#lg)" />
+                <path d="M40 92 L200 150 L360 104 L520 78" fill="none" stroke="#0d7a69" strokeWidth="3" />
+                <path d="M40 60 L200 108 L360 70 L520 52" fill="none" stroke="#2459d6" strokeWidth="2" strokeDasharray="6 5" />
+                {[[40, 92, "FJ-I"], [200, 150, "FJ-II"], [360, 104, "FJ-III"], [520, 78, "LLJ-II"]].map(([x, y, l]) => (
+                  <g key={String(l)}><circle cx={Number(x)} cy={Number(y)} r="6" fill="#fff" stroke="#0d7a69" strokeWidth="3" /><text x={Number(x)} y={238} textAnchor="middle" fontSize="13" fill="#5e6b7e">{l}</text></g>
+                ))}
+                <rect x="170" y="160" rx="8" width="120" height="30" fill="#fcebea" /><text x="230" y="180" textAnchor="middle" fontSize="13" fontWeight="700" fill="#c2352a">−9.8 pp drop</text>
+              </svg>
             </div>
-          </div></TiltCard>
-          <div className="floating-callout"><span className="callout-icon"><BarChart3 size={16} /></span><div><b>Latest assessment</b><small>Average increased 4.2 points</small></div><ArrowUpRight size={14} /></div>
-          <span className="visual-index">01 <i /> 03</span>
+          </TiltCard>
+        </FadeUp>
+      </section>
+
+      <section className="l-section" id="product">
+        <h2>Everything a department needs to understand its results.</h2>
+        <p className="sub">Built on the institution&apos;s own records and rules. Every number is traceable to the marks behind it.</p>
+        <div className="l-feature-grid">{features.map((f, i) => <FadeUp key={f.title} delay={i * 0.05}><article className="l-feature"><span className="ic"><f.icon size={21} /></span><h3>{f.title}</h3><p>{f.body}</p></article></FadeUp>)}</div>
+      </section>
+
+      <section className="l-section" id="hierarchy" style={{ background: "var(--bg)" }}>
+        <h2>One system, five levels of responsibility.</h2>
+        <p className="sub">Each person sees exactly their part of the institution — enforced by the server, not the menu.</p>
+        <div className="l-hier">{hierarchy.map(([t, d, n]) => <div key={t}><span>{n}</span><br /><b>{t}</b><p>{d}</p></div>)}</div>
+      </section>
+
+      <section className="l-section l-band" id="workflow">
+        <h2>From a TLP report to a decision.</h2>
+        <p className="sub">The same path for one section or all ninety-seven.</p>
+        <div className="l-steps">
+          <div><span>01 · UPLOAD</span><br /><b>Drop the reports</b><p>Many files at once; each is routed to its section and assessment automatically.</p></div>
+          <div><span>02 · CHECK</span><br /><b>Preview and correct</b><p>Wrong maximum, wrong course, a mark above the maximum — caught before anything is written.</p></div>
+          <div><span>03 · ANALYSE</span><br /><b>See what moved</b><p>Trends, distributions and comparisons update the moment marks are confirmed.</p></div>
+          <div><span>04 · ACT</span><br /><b>Support and report</b><p>Review attention, record interventions and download the report for the meeting.</p></div>
         </div>
       </section>
 
-      <div className="ticker"><span>ACADEMIC PERFORMANCE, IN CONTEXT</span><i /><span>FACULTY-LED INSIGHT</span><i /><span>BUILT AROUND YOUR RECORDS</span><i /><span>ACADEMIC PERFORMANCE, IN CONTEXT</span></div>
-
-      <ScrollStory />
-
-      <section className="section workflow" id="workflow">
-        <div className="section-kicker">THE WORKFLOW <span>01 — 03</span></div>
-        <div className="section-title-row"><h2>From a marksheet<br />to a meaningful next step.</h2><p>One place to move from the records you maintain to clear, considered action with your students.</p></div>
-        <div className="workflow-grid">{steps.map((step, index) => <article className={`workflow-step step-${index + 1}`} key={step.number}><div className="step-number">{step.number}<span><ArrowUpRight size={14} /></span></div><div className="step-rule" /><h3>{step.title}</h3><p>{step.body}</p></article>)}</div>
-        <div className="workflow-foot"><span>Designed for the way academic teams work</span><span className="foot-mark">AC / 01</span></div>
+      <section className="l-section" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
+        <div><h2>Start with the marks you already have.</h2><p className="sub">Sign in with your institutional account.</p></div>
+        <Link className="btn btn-dark" style={{ height: 50, padding: "0 26px" }} href="/login"><Layers3 size={17} /> Sign in to ACADLYTICS</Link>
       </section>
-
-      <section className="principles" id="principles"><div className="principles-inner"><div className="principles-copy"><div className="section-kicker">BUILT ON TRUST <span>02 — 03</span></div><h2>Insight you can<br /><em>stand behind.</em></h2><p>Academic decisions deserve more than a black box. ACADLYTICS keeps the evidence visible and the next step in faculty hands.</p><Link className="text-link" href="/analytics">Explore analytics <ArrowRight size={15} /></Link></div><div className="principles-list"><article><span className="principle-icon"><FileSpreadsheet size={17} /></span><div><b>Work from existing records</b><p>Bring the assessment data your department already maintains.</p></div><span className="principle-no">01</span></article><article><span className="principle-icon"><Layers3 size={17} /></span><div><b>Keep context close</b><p>Review outcomes by class and assessment, with the underlying records nearby.</p></div><span className="principle-no">02</span></article><article><span className="principle-icon"><ShieldCheck size={17} /></span><div><b>Faculty stay in control</b><p>Use measured language and decide what action makes sense for your class.</p></div><span className="principle-no">03</span></article></div></div></section>
-
-      <SocialProof />
-
-      <section className="closing-cta"><div><div className="section-kicker">YOUR CLASSES, IN CLEARER FOCUS <span>03 — 03</span></div><h2>Start with the data<br />you already have.</h2></div><MagneticButton><Link className="button button-light" href="/dashboard">Enter the workspace <ChevronRight size={17} /></Link></MagneticButton><Sparkles className="cta-spark" size={28} /></section>
-      <footer className="landing-footer"><Link className="brand" href="/"><span className="brand-mark"><CircleDot size={17} /></span> ACADLYTICS</Link><span>SRM Institute of Science and Technology · Academic Performance Intelligence</span><span>© 2026 ACADLYTICS</span></footer>
+      <footer className="l-footer"><span>ACADLYTICS · Academic Performance Intelligence</span><span>SRM Institute of Science and Technology</span></footer>
     </main>
   );
 }

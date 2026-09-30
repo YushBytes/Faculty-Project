@@ -1,351 +1,199 @@
 # ACADLYTICS
 
-Academic Performance Intelligence Platform.
+**Academic performance intelligence for SRM Institute of Science and Technology.**
 
 ```
-Academic data -> validated ingestion -> PostgreSQL -> deterministic analytics
-  -> teacher intelligence -> actions/interventions -> outcome measurement -> reports
+SRM TLP reports (xlsx / csv / pdf) → validated import → PostgreSQL → deterministic analytics
+   → attention → interventions → reports — for every level of the academic hierarchy
 ```
 
-One application, in one repository:
+One application in one repository: a FastAPI backend (`backend/`), a Next.js web app
+(`frontend/`) and PostgreSQL, run together with Docker Compose.
 
-```
-/
-├── backend/     FastAPI + SQLAlchemy + Alembic, the whole API and the analytics engine
-├── frontend/    Next.js teacher-facing app
-├── docs/        scope, contracts, data model, import format, analytics specification
-├── docker-compose.yml
-├── .env.example
-└── .github/     CI
-```
-
-| Part | Built by | Scope |
+| Level | Sees | Can change |
 |---|---|---|
-| Data platform | Agent 1 | Auth, users, RBAC and faculty scope, departments/terms/courses/sections/offerings, students, assessments and results, Excel/CSV import pipeline, audit |
-| Intelligence | Agent 2 | Analytics, attention/segmentation, interventions and outcomes, reports |
-| Teacher UI | Agent 3 | `frontend/` — Next.js app the faculty member actually uses |
+| **Administrator** (exactly one) | the whole institution | everything: departments, terms, courses, sections, people and roles, assignments |
+| **HOD** (one per department) | the department: every course, section, coordinator, faculty member, student | department staff below them, sections, courses, coordinators, faculty assignment |
+| **Academic Head** (one per department) | the department's course portfolio | appoints Course Coordinators, course information, faculty assignment |
+| **Course Coordinator** | their course(s) across **every** section and faculty member | faculty assignment for their course; imports and confirms TLP files for any section |
+| **Faculty** | only the classes they teach | their classes' marks (TLP upload), interventions |
 
-Backend stack: Python 3.11+ (developed on 3.12), FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16,
-pytest, Docker. Frontend stack: Next.js 16, React 19, TypeScript 5, Tailwind 4, Recharts.
+Every rule above is enforced by the API (`backend/app/modules/organization/scope.py`,
+`users/service.py`); an out-of-scope id is a 404, never a leak. The UI only mirrors it.
 
-Work happens on `backend`; `main` receives reviewed merges. The `frontend/nachiketa-ui` branch is
-the frontend's original history and was merged here — it is kept, not deleted.
+---
 
-## Status
+## 1. Run it (Docker — recommended)
 
-| Phase | Built by | State |
-|---|---|---|
-| 1. Skeleton: config, DB session, Alembic, `/health`, Docker, test infra | Agent 1 | Done |
-| 2. Users, Argon2 passwords, JWT access + rotating refresh tokens, RBAC | Agent 1 | Done |
-| 3. Departments, terms, courses, sections, offerings, faculty scope | Agent 1 | Done |
-| 4. Students, section history, enrolments, student bulk import | Agent 1 | Done |
-| 5. Assessments, assessment-level results, settings, audit log, recompute hook | Agent 1 | Done |
-| 6. Import pipeline (parse, validate, stage, preview, fix, confirm) | Agent 1 | Done |
-| 7. Audit API, seed/demo data, analytics data contract, docs | Agent 1 | Done |
-
-## One codebase, one branch
-
-Agent 1 and Agent 2 build the **same application**: one FastAPI app, one PostgreSQL
-database, one Alembic migration chain, one test suite. Both push to the **`backend`**
-branch. `main` only receives reviewed merges from `backend`.
-
-```
-backend/
-  app/
-    core/            config, security, errors, pagination
-    db/
-      base.py, session.py, mixins.py
-      models.py      every ORM model imported here (one list, both agents add to it)
-    api/v1.py        every router registered here (one list, both agents add to it)
-    modules/         one package per feature module, from both agents, side by side:
-      auth/ users/ organization/ students/ assessments/ audit/ imports/   (done)
-      analytics/ attention/ interventions/ reports/          Agent 2
-  alembic/versions/  one linear migration chain
-  tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
-  pyproject.toml     one dependency list
-docker-compose.yml, .env.example, README.md
-```
-
-### Working rules
-
-1. **Same structure for every module:** `models.py`, `schemas.py`, `repository.py`,
-   `service.py`, `router.py`. Routers never touch the session; services own the
-   transaction (one `commit()` per operation); repositories never commit.
-2. **New module = new folder** under `app/modules/`, plus one line in `app/api/v1.py`
-   (router) and one in `app/db/models.py` (models).
-3. **Reuse, don't duplicate.** Analytics reads students, offerings, assessments and
-   results through the existing services/repositories, so faculty scope and PII rules are
-   enforced in one place. Protect endpoints with `CurrentUser` / `require_roles(...)` from
-   `app.modules.auth.dependencies`. If a query you need is missing, add it to the owning
-   module's repository rather than querying its tables from elsewhere.
-   Anything tied to an offering must pass through `OfferingAccess` / `visible_offering_ids`
-   (see "Access scope").
-4. **Writes:** validate first, mutate after. Make the change inside
-   `with write_guard(session, conflict=..., in_use=...)` (from `app.db.repository`): it runs
-   in a SAVEPOINT and turns unique / foreign-key / check violations into 409 / 409 / 422
-   without breaking the session.
-5. **Migrations:** `git pull`, `alembic upgrade head`, then
-   `alembic revision --autogenerate -m "..."` and rename the revision ID to the next number
-   (`0003`, `0004`, ...). `tests/test_migrations.py` fails on two heads or on model/schema
-   drift; if two heads appear after a pull, point the newer migration's `down_revision` at
-   the other one.
-6. **Before every push:** `git pull --rebase origin backend`, then `pytest` and
-   `ruff check . && ruff format --check .` must pass.
-
-## Run with Docker Compose
+Prerequisites: **Docker Desktop** (Windows/macOS) or Docker Engine + Compose v2. Nothing else.
 
 ```bash
-cp .env.example .env          # set JWT_SECRET_KEY to a long random value
-docker compose up --build
-docker compose exec api python -m app.cli seed-demo      # demo data (empty DB only), or:
-docker compose exec api python -m app.cli create-admin --email admin@srmist.edu.in --name "Admin"
-curl http://localhost:8000/health
+git clone https://github.com/YushBytes/Faculty-Project.git
+cd Faculty-Project
+git checkout backend
+docker compose up -d --build          # db + api (runs migrations) + web
+docker compose exec api python -m app.cli seed-demo   # ~2 minutes, once
 ```
 
-API docs: http://localhost:8000/docs
+Then open **http://localhost:3000** and sign in with a demo account (below).
 
-## Run locally
+| Service | URL |
+|---|---|
+| Web app | http://localhost:3000 |
+| API | http://localhost:8000 |
+| API docs (OpenAPI / Swagger) | http://localhost:8000/docs |
+| Health | http://localhost:8000/health |
 
-Needs PostgreSQL 16 (for example `docker compose up -d db`).
+Stop with `docker compose down` (data is kept in the `pgdata` volume);
+`docker compose down -v` also deletes the database. To re-seed, run `down -v`, `up -d` and
+`seed-demo` again — seed-demo only runs on an empty database.
+
+## 2. Demo accounts (fictional)
+
+Every account uses the password **`Demo@2026pass`**. All people, names, register numbers
+(`RA2411999…`) and staff ids (`9xxxxx`) are generated; nothing is real.
+
+| Role | Email |
+|---|---|
+| Administrator | `admin@acadlytics.dev` |
+| HOD, Computer Science and Engineering | `hod.cse@acadlytics.dev` |
+| Academic Head | `academic.head@acadlytics.dev` |
+| Course Coordinator — Data Structures and Algorithms (21CSC201J) | `coord.dsa@acadlytics.dev` |
+| Course Coordinator — Operating Systems (21CSC202J) | `coord.os@acadlytics.dev` |
+| Course Coordinator — Advanced Programming Practice (21CSC203P) | `coord.app@acadlytics.dev` |
+| Course Coordinator — Design Thinking and Methodology (21DCS201P) | `coord.dt@acadlytics.dev` |
+| Course Coordinators — DAA (21CSC204J), DBMS (21CSC205P), odd semester | `coord.daa@…`, `coord.dbms@…` |
+| Faculty | `faculty1@acadlytics.dev` … `faculty100@acadlytics.dev` |
+
+### The demo institution
+
+One department with the full hierarchy, **97 sections** (A1 … N6) of the 2024 batch,
+**~4,100 students**, **106 teaching staff**, and AY 2025-26:
+
+* **Odd semester (complete):** 21CSC204J DAA, 21CSC205P DBMS
+* **Even semester (current, in progress):** 21CSC201J DSA, 21CSC202J OS, 21CSC203P APP,
+  21DCS201P Design Thinking
+
+Assessments follow the SRM scheme for each course type (joint: FJ-I, LLJ-I, FJ-II, FJ-III,
+LLJ-II; project: FP-I, PBL-I…), with component maximum = contribution as on TLP reports. Sections
+have deliberately different, reproducible profiles — high performing, average, borderline, high
+failure, declining, improving, incomplete data, volatile — and DSA's FJ-II is a harder paper, so
+the charts show real spikes and drops. DSA's FJ-II marks for 12 sections were imported through the
+real TLP pipeline (so import history is genuine), and FJ-III is still missing for 37 sections —
+that is what the upload demo fills in.
+
+The section count is data, not code: add or remove sections under **Academic structure**, or run
+`seed-demo --sections 20` for a smaller demo.
+
+## 3. Demonstration flows
+
+1. **Administrator** → Overview (institution) → *Departments* → CSE → *Courses* → a course →
+   *Sections* → a class → *Reports* → PDF.
+2. **HOD** → Overview: 97 sections, course/section/faculty comparisons, heat maps, attention →
+   *Sections* (the 97-tile map) → *Faculty* → *Attention* → *Reports*.
+3. **Academic Head** → *Coordinators* (portfolio, assign/replace a coordinator) → *Courses* →
+   a course → *Faculty* tab → *Reports*.
+4. **DSA Course Coordinator** → Overview (all 97 DSA sections) → *Faculty* comparison →
+   *Import TLP marks* → drop **every file in `demo/tlp-uploads/`** at once:
+   * 8 files (xlsx, csv and TLP pdf) route themselves to sections I5–J5 and to FJ-III → **Valid**
+   * `*_wrong-max.pdf` → **Errors**: the report's component maximum is 20, FJ-III is out of 15
+   * `*_needs-fix.xlsx` → **Errors**: one mark above the maximum → *Review* → type the corrected
+     mark → *Apply* (audited) → it becomes valid
+   * **Confirm** → marks are written, FJ-III is published, analytics recompute; the dashboard,
+     heat map and attention change immediately → *Reports*.
+5. **Faculty** (`faculty1@…`) → *My classes* → a class → *Marks*, *Assessments*, *Attention* →
+   *Intervene* on a flagged student → *Interventions* → *Reports*.
+
+All flows use one database. The real SRM FP-I PDF also parses (title block, 58 rows, summary),
+but its students are not in the demo, so it is rejected with "none of the file's students is
+enrolled" — the correct answer.
+
+## 4. Run without Docker (development)
+
+Prerequisites: Python 3.11+, Node.js 20.9+ (22 recommended), PostgreSQL 16.
 
 ```bash
+# database (once)
+createuser -s acadlytics --pwprompt          # password: acadlytics
+createdb -O acadlytics acadlytics
+
+# backend
 cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-cp ../.env.example .env
+cp ../.env.example .env                         # adjust DATABASE_URL if needed
 alembic upgrade head
-python -m app.cli seed-demo        # optional synthetic demo data (see docs/AGENT_2_ANALYTICS_CONTRACT.md §8)
-python -m app.cli create-admin --email admin@srmist.edu.in --name "Admin"
-uvicorn app.main:app --reload
+python -m app.cli seed-demo
+uvicorn app.main:app --reload --port 8000
+
+# frontend (second terminal)
+cd frontend
+npm ci
+npm run dev                                     # http://localhost:3000
 ```
 
-`create-admin` reads the password from `ACADLYTICS_ADMIN_PASSWORD` or prompts for it.
-`seed-demo` loads fictional users (`admin@acadlytics.dev`, `priya.nair@acadlytics.dev`, ...,
-password `ACADLYTICS_DEMO_PASSWORD`, default `Demo@2026pass`), four offerings, 60 students and
-results with known patterns. It refuses to run in production or on a non-empty database.
+The web app forwards `/api/v1/*` to `ACADLYTICS_API_URL` (default `http://localhost:8000`).
 
-## Documentation
-
-| Document | For |
-|---|---|
-| `docs/AGENT_2_ANALYTICS_CONTRACT.md` | how analytics reads data, the recompute hook, thresholds, seed patterns, scope rules — the Agent 1 → Agent 2 handoff |
-| `docs/DATA_MODEL.md` | every table, constraint and migration |
-| `docs/IMPORT_FORMAT.md` | spreadsheet layouts, value rules, every validation code |
-| `docs/PROJECT_CONTEXT.md`, `docs/TEAM_OWNERSHIP.md` | scope, contracts, ownership (shared) |
-| `http://localhost:8000/docs` | live OpenAPI |
-
-## Tests and lint
-
-Tests run against real PostgreSQL. They create and drop `acadlytics_test` and a scratch
-migration database, so the DB user needs `CREATEDB` (the Compose user has it). Override
-with `TEST_DATABASE_URL`.
+## 5. Checks
 
 ```bash
-cd backend
-pytest                       # everything
-pytest tests/test_auth_api.py   # one file
-ruff check . && ruff format --check .
+cd backend && pytest && ruff check . && ruff format --check .
+cd frontend && npm run lint && npm run build
 ```
 
-Shared fixtures in `tests/conftest.py`: `db_session` (rolled back after each test),
-`client`, `make_user(role, ...)`, `admin` / `hod` / `faculty`, `auth_headers(user)`,
-`login(client, email)`.
+The backend suite (~1,900 tests) runs against real PostgreSQL: auth, the five-role scope and
+IDOR checks, TLP import in all three formats, routing and title-block verification, aggregate
+analytics consistency with the class engine, report downloads, migrations, seed.
 
-### Layers
+## 6. How it works
 
-| Where | What it covers |
+**Authentication.** The browser never holds a refresh token. `POST /api/session/login` (a
+Next.js route) calls the API and stores the rotating refresh token in an httpOnly,
+SameSite=Strict cookie scoped to `/api/session`; the 15-minute access token lives in memory and is
+renewed silently. `GET /api/v1/me/workspace` returns the user's role, department, courses
+coordinated, classes taught, terms and capabilities; the UI is built from that answer.
+
+**TLP ingestion** (`backend/app/modules/imports/`): SRM TLP5 reports as `.xlsx`, `.csv` or text
+PDF (parsed line by line, strictly; a scanned or foreign PDF is refused, never guessed). The title
+block (test name, academic year, component maximum, course, faculty id) and summary block
+(strength, absentees, ranges) are kept and **checked** against the platform: wrong course,
+semester, assessment or maximum, or a truncated file, block the import. Multi-file uploads route
+each file to its section by the register numbers it contains. Every file goes through the same
+stage → preview → fix/exclude → atomic confirm pipeline, with audit.
+
+**Analytics** (`backend/app/modules/analytics/`): a deterministic engine per class. Every class's
+result is materialised in `offering_summaries` (refreshed in the same transaction as any mark
+change, and checked by fingerprint on read), and `backend/app/modules/overview/` pools those for a
+section, course, faculty member, coordinator, department or the institution with the engine's own
+functions — so a department average is the same definition over more students, the dashboard and
+the report come from one object, and no number is computed twice in two ways.
+
+**Semantics that never bend:** absent, exempt and missing are never zero; pass % is over students
+with a result (absence is reported as completion); trends need enough assessments or say
+"insufficient data"; attention is seven explained rules, not a score; intervention outcomes are
+observations, never causes.
+
+## 7. Troubleshooting
+
+| Symptom | Fix |
 |---|---|
-| `tests/analytics/`, `tests/reports/` | the pure engine and report builders, against hand-computed fixtures; no database |
-| `tests/test_<module>*.py` | one module's API and models: auth, RBAC, organisation, students, assessments, results, imports, audit |
-| `tests/api/` | the analytics service and routers with the platform read stubbed |
-| `tests/e2e/` | whole-system journeys over HTTP: login, import, recompute, analytics, attention, intervention, outcome, report, export — plus the integration invariant sweep (no NaN/Infinity, absent/missing/exempt are never zero, R1–R7 agree across engine, API, persistence and report) |
-| `tests/security/` | authorization and IDOR across every offering-scoped route, hostile input, and upload validation |
-| `tests/test_api_contract.py` | the OpenAPI document: every route documented, nothing internal published, attention not writable |
-| `tests/test_schema_integrity.py` | the migrated schema itself: foreign keys and delete rules, the partial unique index, enum labels against their Python enums, constraints that actually reject bad rows |
-| `tests/test_query_budget.py` | query **shape**: a read must not issue more SQL for a bigger cohort |
+| Web shows "The ACADLYTICS server is not reachable" | The API is still starting or failed: `docker compose logs api`. |
+| `port is already allocated` | Something else uses 5432/8000/3000: set `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` in `.env`. |
+| `seed-demo` says the database already has users | It only seeds an empty database: `docker compose down -v`, `up -d`, seed again. |
+| Signed out on every refresh | You are on plain http with `NODE_ENV=production` outside Compose: set `ACADLYTICS_INSECURE_COOKIES=1` (local only). |
+| Docker Hub pull errors ("HTTP response to HTTPS client") | Transient registry/proxy issue; run `docker compose up -d --build` again. |
+| A PDF is rejected | Only SRM TLP-format text PDFs are read; upload the Excel/CSV export for other layouts. |
 
-CI runs lint, the format check and the whole suite against a `postgres:16-alpine` service on
-every push and pull request to `backend` and `main` (`.github/workflows/ci.yml`). It needs no
-secrets: the service credentials are the documented defaults, so `tests/conftest.py` resolves
-`TEST_DATABASE_URL` from its own fallback.
-
-## API conventions
-
-- Base path `/api/v1`; `GET /health` is unversioned (200 ok / 503 degraded, reports the
-  migration revision).
-- Auth: `Authorization: Bearer <access_token>`.
-- IDs are UUIDs. Lists return `{items, total, limit, offset}` (`limit` 1-200, default 50).
-- Every error uses one envelope; `details` carries field/row/cell items:
-
-```json
-{"error": {"code": "validation_error", "message": "Request validation failed.",
-           "details": [{"loc": ["body", "email"], "message": "...", "code": "value_error"}]}}
-```
-
-Codes: `not_authenticated` 401, `permission_denied` 403, `not_found` 404, `conflict` 409,
-`validation_error` / `business_rule_violation` 422.
-
-## Authentication and roles
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/v1/auth/login` | email + password -> access token (15 min) + refresh token (7 days) |
-| `POST /api/v1/auth/refresh` | rotate: old refresh token revoked, new pair issued |
-| `POST /api/v1/auth/logout` | revoke the session; always 204 |
-| `GET /api/v1/auth/me` | current user |
-| `/api/v1/users` | create, list, get, patch, `/deactivate`, `/activate` (ADMIN only) |
-
-- Passwords: Argon2id, 8-128 characters. Wrong password, unknown email and inactive account
-  all return the same 401.
-- Refresh tokens are opaque and stored only as SHA-256. Replaying a rotated token revokes
-  that whole session (theft detection); other sessions are unaffected.
-- Every request re-reads the user: deactivation and role changes apply immediately, and the
-  role in the JWT is never trusted for authorisation.
-- Password reset by an admin and deactivation revoke all of that user's sessions.
-- Roles: `ADMIN`, `HOD`, `FACULTY`. Use `require_roles(...)` / `CurrentUser` from
-  `app.modules.auth.dependencies` in any router. Department scope for HOD and offering scope
-  for FACULTY arrive in Phase 3.
-
-## Academic structure and access scope
-
-| Resource | Read | Write |
-|---|---|---|
-| `/departments`, `/terms` | any signed-in user | ADMIN |
-| `/courses`, `/sections` | any signed-in user | ADMIN; HOD for their own department |
-| `/offerings` | scoped (below) | ADMIN; HOD for courses of their department |
-| `/offerings/{id}/faculty` | scoped | ADMIN; HOD for courses of their department |
-| `/users` | ADMIN, HOD (look-up for assigning faculty) | ADMIN |
-
-A **course offering** (course x term x section) is the unit of teaching and of data access.
-Faculty are assigned to offerings; everything attached to an offering (students, assessments,
-results, imports, analytics) inherits its scope:
-
-| Role | Can view an offering when | Can administer it when |
-|---|---|---|
-| ADMIN | always | always |
-| HOD | its course is in their department, or they teach it | its course is in their department |
-| FACULTY | they are assigned to it | never |
-
-Enforced server-side in `app/modules/organization/scope.py`:
-
-- `OfferingAccess(session).get(user, offering_id, Access.VIEW | Access.ADMINISTER)` returns the
-  offering, **404** if outside the user's scope (existence is not disclosed), **403** if visible
-  but not administrable.
-- `visible_offerings(user)` / `visible_offering_ids(user)` give a SQL condition / subquery to
-  filter any query by scope. List endpoints use these, so filters can never widen scope.
-
-### Students and enrolments
-
-| Endpoint | Who |
-|---|---|
-| `GET /students`, `GET /students/{id}`, `GET /students/{id}/sections` | scoped (below) |
-| `POST /students`, `PATCH`, `/deactivate`, `/activate` | ADMIN; HOD for their department |
-| `POST /students/bulk` (JSON), `POST /students/import` (CSV/XLSX) | ADMIN; HOD for their department |
-| `GET /offerings/{id}/students` (roster) | anyone who can view the offering |
-| `POST /offerings/{id}/enrollments`, `/enrollments/from-section`, `DELETE /enrollments/{student_id}` | who can administer the offering |
-
-Student records are PII. **FACULTY** see only students enrolled in their offerings; **HOD** see
-their department's students plus students in offerings they can view; **ADMIN** see all.
-Anything else is 404. Use `visible_students(user)` (`app/modules/students/service.py`) to filter.
-
-- **Historical correctness:** results hang off an *enrolment* (student x offering). Moving a
-  student to another section updates `current_section` and closes/opens a
-  `student_section_history` entry; old enrolments and their results are never rewritten.
-- **Dropping** an enrolment sets `status=DROPPED` and keeps the row. Rosters default to ACTIVE
-  enrolments of active students (`include_dropped`, `include_inactive` to widen).
-- **Bulk import** upserts by `register_number`, validates every row first and writes all rows or
-  none. Errors are row/field level with the offending value; file imports report spreadsheet row
-  numbers. `dry_run` validates without writing. Headers are matched flexibly
-  (`Reg No` / `Register Number`, `Name`, `Dept`, `Batch`, `Section`, `Email`).
-
-### Assessments and results
-
-| Endpoint | Who |
-|---|---|
-| `GET/POST /offerings/{id}/assessments`, `GET/PATCH/DELETE /assessments/{id}` | anyone who can view the offering |
-| `GET/PUT /assessments/{id}/results`, `DELETE /assessments/{id}/results/{student_id}` | anyone who can view the offering |
-| `GET /offerings/{id}/results` (full results of an offering, for analytics) | anyone who can view the offering |
-| `GET /departments/{id}/settings`; `PUT/DELETE .../settings/{key}` | any signed-in user; ADMIN or that department's HOD |
-| `POST /admin/recompute?offering_id=` | ADMIN |
-
-- **Assessments are rows** (`CT1`, `FT2`, ...; names unique per offering, case-insensitive),
-  with `assessment_type`, `max_marks`, `weightage`, `sequence_no`, `is_published`. Total
-  weightage above 100 is returned as a warning. `max_marks` is locked once results exist.
-- **Results** are one row per `(student_id, assessment_id)` in `assessment_results`:
-  `status` is `present | absent | exempt`, `score` is nullable with no default, and a database
-  CHECK makes `score` present exactly when `status = present`, within `0..max_marks_snapshot`.
-  **Missing** = no row. Absent, exempt and missing are never 0. Blank manual entries are
-  rejected; an explicit `0` is a real score.
-- `PUT .../results` is all-or-nothing with per-entry errors. New results need an ACTIVE
-  enrolment; existing results of dropped students stay visible and editable.
-- **Overwrites and deletions are audited** (`audit_logs`, old and new values, actor, offering).
-- **Recompute hook (C4):** every results write calls `app.core.recompute.recompute(session,
-  assessment_id)` inside the transaction, before commit. It is a no-op until the analytics
-  layer installs its implementation with `set_recompute(fn)`; the hook must not commit, and an
-  exception aborts the write.
-- **Offering pass mark:** `course_offerings.pass_percent` (default 50) and `config` (JSON object
-  of threshold overrides; the assigned faculty may edit it, the pass mark needs ADMIN/HOD).
-
-### Audit log
-
-`GET /audit-logs?entity=&entity_id=&action=&offering_id=&actor_id=&since=&until=` — ADMIN sees
-everything; others see entries of offerings they can view. Written in the same transaction as the
-change: result overwrites and deletions, import fixes and confirmations, user role / department /
-password / activation changes, student (de)activation, settings changes.
-
-### Marks import
+## 8. Repository
 
 ```
-POST /offerings/{id}/imports | POST /assessments/{id}/import   (multipart .xlsx/.csv, <= 5 MB)
-  -> staged batch + preview            nothing written to results
-GET  /imports/{id}/preview?only=all|issues|errors
-POST /imports/{id}/fix | /exclude | /mapping                   each returns the revalidated preview
-POST /imports/{id}/confirm                                     one transaction
-POST /imports/{id}/discard       GET /imports (history)        GET .../imports/template (.xlsx)
+backend/    FastAPI app: modules/{auth,users,organization,students,assessments,imports,
+            analytics,attention,interventions,reports,overview,audit}, Alembic 0001–0008, tests
+frontend/   Next.js 16 app: app/(app)/* pages, components/, lib/api (typed adapters), lib/auth
+demo/       TLP upload demo files (generated by seed-demo; fictional)
+docs/       data model, import format, analytics specification and contracts
 ```
 
-- Wide sheets (`Register No | Name | CT1 | CT2 ...`, headers like `CT1 (max 50)` accepted) and
-  long sheets (`Register No | Assessment | Score | [Max] | [Percentage] | [Status]`) are
-  detected automatically. Assessment columns are matched by name; unmatched or ambiguous
-  columns are errors until mapped or ignored — never guessed.
-- Cells are read as raw strings. Blank = **absent** (warning, never 0); `AB` `A` `-` = absent;
-  `EX` = exempt; anything else non-numeric is an error. Turning a blank into `0` is an explicit,
-  audited fix.
-- Checks: file type (from bytes), missing/ambiguous register-number column, empty or duplicate
-  headers, unknown / not enrolled / dropped students, duplicate student rows, conflicting identity
-  (name belongs to another student) and name mismatch, unknown / duplicate / ambiguous assessment
-  columns, max-marks mismatch, invalid numbers, too many decimals, score below 0 or above max,
-  impossible percentage, invalid status, students missing from the file, results that will be
-  overwritten, the same file already imported.
-- **Confirm** revalidates against current data, refuses while any error remains, then writes
-  results (with `import_batch_id` provenance), audit rows for overwrites, the batch state and the
-  recompute hook in **one transaction** — proven by a test that crashes mid-confirm on real
-  transactions and finds nothing written. Batches expire after 24 h; only the uploader or an
-  offering administrator may change or confirm one.
-
-Other rules: at most one current term (`/terms?is_current=true`); an HOD must belong to a
-department; codes are stored upper-case; deleting anything still referenced returns 409.
-
-## Design decisions
-
-- **Modular monolith**, one package per domain, strict router/service/repository layers.
-- **Sync SQLAlchemy 2.x + psycopg 3.** Workload is CRUD and batch imports; sync code is
-  simpler to make transactional and to test.
-- **PostgreSQL only, including tests.** Tests build the schema by running migrations
-  (never `create_all`), and each test runs in a rolled-back transaction.
-- **Fixed constraint naming convention**, so migrations and constraint errors are
-  predictable.
-- **Migration drift fails the build** (single head, full down/up round trip, models ==
-  schema).
-- **The API container runs `alembic upgrade head` on start.** Fine for one instance; move to
-  a one-off job if the API is scaled out.
-- **Refresh token in the JSON body**, not a cookie, so any client can use it; switching to an
-  httpOnly cookie is a router-only change if the frontend wants it.
-- **Uploads are read with openpyxl and the csv module, not pandas.** Cells come back as raw
-  strings; each importer validates types explicitly. pandas' type inference turns `"007"` into
-  `7` and blanks into `NaN`, which would break "bad data never silently becomes a number".
-  Limits: 5 MB, 5000 rows, 200 columns; `.xlsx` and UTF-8 `.csv` (`,` `;` or tab) only, detected
-  from the file bytes.
-- **No login rate limiting yet** (no Redis by design). Add at the reverse proxy.
-- **Access tokens stay valid until expiry (max 15 min) after logout;** deactivation still
-  cuts them off immediately because every request re-reads the user.
+Documentation: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md),
+[`docs/IMPORT_FORMAT.md`](docs/IMPORT_FORMAT.md), [`docs/ANALYTICS_SPEC.md`](docs/ANALYTICS_SPEC.md),
+[`docs/AGENT_2_ANALYTICS_CONTRACT.md`](docs/AGENT_2_ANALYTICS_CONTRACT.md).

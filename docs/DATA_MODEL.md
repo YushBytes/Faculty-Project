@@ -18,8 +18,10 @@ convention `pk_/uq_/ck_/fk_/ix_<table>_...`. Money-like exact numbers (marks, pe
 | `0004` | `students`, `student_section_history`, `enrollments` |
 | `0005` | `assessments`, `assessment_results`, `settings`, `audit_logs`; `pass_percent`, `config` on offerings |
 | `0006` | `import_batches`; `assessment_results.import_batch_id` |
+| `0007` | `attention_flags`, `interventions`, `intervention_students`, `intervention_reasons` |
+| `0008` | roles ACADEMIC_HEAD / COURSE_COORDINATOR, `course_coordinators`, one active HOD and Academic Head per department, `users.employee_code/designation`, `academic_terms.semester`, `courses.course_type`, SRM assessment families, `import_batches.source_metadata/upload_group_id`, `offering_summaries`, `generated_reports` |
 
-Next free revision id: **`0007`**. `tests/test_migrations.py` fails on two heads, on a failed
+Next free revision id: **`0009`**. `tests/test_migrations.py` fails on two heads, on a failed
 down/up round trip, or when models and migrations differ.
 
 ## Tables

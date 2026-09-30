@@ -243,3 +243,24 @@ def test_apply_srm_scheme_is_idempotent(client: TestClient, db_session, org, cse
     assert float(fp1["max_marks"]) == 10  # the TLP "Component Max. Mark"
     again = client.post(f"{API}/offerings/{offering.id}/assessments/apply-scheme", headers=headers)
     assert len(again.json()["items"]) == 6
+
+
+def test_correcting_a_mark_supersedes_the_files_percentage(client: TestClient, world) -> None:
+    offering = world["offerings"][0]
+    rows = roster(world["students"]["A1"])
+    rows[0] = TlpRow(rows[0].register_number, rows[0].name, Decimal("17"))  # above max 15
+    headers = auth_headers(world["teacher"])
+    r = client.post(
+        f"{API}/offerings/{offering.id}/imports",
+        files={"file": ("x.xlsx", to_xlsx(header(), rows))},
+        headers=headers,
+    ).json()
+    assert r["summary"]["errors"] >= 1
+    batch = r["batch"]["id"]
+    row = next(x["row"] for x in r["rows"] if x["cells"] and x["cells"][0]["raw"] == "17.00")
+    fixed = client.post(
+        f"{API}/imports/{batch}/fix",
+        json={"fixes": [{"row": row, "column": "Obtained Mark", "value": "14"}]},
+        headers=headers,
+    ).json()
+    assert fixed["summary"]["errors"] == 0 and fixed["summary"]["can_confirm"] is True

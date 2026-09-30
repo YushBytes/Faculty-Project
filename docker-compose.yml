@@ -24,11 +24,24 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acadlytics}:${POSTGRES_PASSWORD:-acadlytics}@db:5432/${POSTGRES_DB:-acadlytics}
+      # seed-demo writes its TLP demo files here (copies are committed under demo/tlp-uploads)
+      ACADLYTICS_DEMO_DIR: /tmp/acadlytics-demo
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+
+  web:
+    build: ./frontend
+    environment:
+      ACADLYTICS_API_URL: http://api:8000
+      # Local demo over plain http: allow the httpOnly session cookie without the Secure flag.
+      ACADLYTICS_INSECURE_COOKIES: "1"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
 
 volumes:
   pgdata:

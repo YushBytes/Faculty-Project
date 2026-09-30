@@ -73,6 +73,25 @@ class InsightsService:
         of the academic year (offerings are per term, so nothing is counted twice)."""
         terms = list(self._session.scalars(select(AcademicTerm).order_by(AcademicTerm.start_date)))
         current = next((t for t in terms if t.is_current), terms[-1] if terms else None)
+        if filters.offering_id is not None:
+            # One class: its own term, whatever period is selected elsewhere.
+            term_id = self._session.scalar(
+                select(CourseOffering.term_id).where(CourseOffering.id == filters.offering_id)
+            )
+            chosen = [t for t in terms if t.id == term_id]
+            if not chosen:
+                raise NotFoundError("Course offering not found.")
+            return (
+                Filters(
+                    **{
+                        **filters.__dict__,
+                        "academic_year": chosen[0].academic_year,
+                        "semester": chosen[0].semester.value if chosen[0].semester else "YEAR",
+                    }
+                ),
+                chosen,
+                chosen[0].name,
+            )
         if filters.term_id is not None:
             chosen = [t for t in terms if t.id == filters.term_id]
             if not chosen:

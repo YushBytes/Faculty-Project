@@ -1,37 +1,36 @@
 # Frontend architecture
 
-## Runtime and layout
+Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind 4 (base only), Recharts,
+Framer Motion, Lucide, self-hosted Inter and Plus Jakarta Sans. No mock data: every screen reads
+the FastAPI backend.
 
-This frontend uses Next.js 16 App Router, React 19, TypeScript, Tailwind CSS v4, Base UI, Lucide, Recharts, and Geist. Route entry points live under `app/`; workspace screens share `components/layout/app-shell.tsx` and `components/product-page.tsx`. The landing page and sign-in have dedicated compositions.
+## Layers
 
-## Routes
+| Layer | Files | Rule |
+|---|---|---|
+| Backend-for-frontend | `app/api/session/{login,refresh,logout}`, `app/api/v1/[...path]` | The refresh token lives only in an httpOnly SameSite=Strict cookie scoped to `/api/session`; `/api/v1/*` is proxied same-origin to `ACADLYTICS_API_URL`. |
+| HTTP client | `lib/api/http.ts` | In-memory access token, one silent refresh + retry on 401, backend error envelope → `ApiError`, downloads, upload progress. |
+| Adapters | `lib/api/endpoints.ts`, `lib/api/types.ts` | The only place URLs and wire types appear. Pages import adapters, never `fetch`. |
+| Session | `lib/auth/session.tsx` | Restores the session, loads `/me/workspace` (role, department, courses coordinated, classes taught, terms, capabilities), holds the academic period, `useScope()` merges period + URL filters. |
+| Data | `lib/hooks/use-api.ts` | Keyed loading with stale-response dropping; every view has loading, empty, error and success states. |
+| UI kit | `components/ui.tsx`, `components/charts.tsx` | Cards, KPIs, sortable tables, drawers, states; line/area, bar, histogram, donut, ranking, heat map, sparkline charts. |
+| Views | `components/overview.tsx` | The one dashboard for every level; `variant` changes emphasis, never what is counted. |
 
-- `/`: product landing page
-- `/login`: demo sign-in entry
-- `/dashboard`: faculty overview
-- `/students` and `/students/[id]`: directory and student record
-- `/assessments` and `/assessments/[id]`: assessment list and assessment view
-- `/import`: staged import preview experience
-- `/analytics`: assessment-level comparisons
-- `/attention`: configured-threshold review queue
-- `/interventions` and `/interventions/[id]`: action list and outcome timeline
-- `/reports`: class summary builder and report history
-- `/settings`: workspace preference foundations
+## Routes (`app/(app)/…`, all behind the session)
 
-Workspace routes use a client-side demo session, with separate Faculty and HOD views. Protected workspace screens redirect to `/login` when no demo session is restored. The sign-in is not a substitute for backend authorization.
+`/dashboard` (role-specific), `/departments[/id]`, `/courses[/id]`, `/sections[/id]`,
+`/faculty[/id]`, `/classes[/id]`, `/team`, `/analytics`, `/assessments[/key]`,
+`/students[/id]`, `/attention`, `/interventions[/id]`, `/import`, `/reports`, `/admin/users`,
+`/admin/structure`, `/audit`, `/settings`. Public: `/`, `/login`.
 
-## Design system
+Filters and period live in the URL (`?year=2025-26&sem=EVEN&course_id=…`) so every view is a
+shareable link; the period selector sets the default for the user on that device.
 
-Design tokens and responsive primitives are in `app/globals.css`. The system uses a charcoal canvas, restrained teal accent, thin borders, compact mono metadata, and clear focus states. Shared buttons, panels, metrics, statuses, data tables, notices, and headings keep the application consistent. Breakpoints adapt the sidebar into a mobile drawer and make wide data tables horizontally scrollable.
+## Design
 
-## Components and motion
+Light institutional theme: off-white canvas, white surfaces, ink-navy type, one teal accent, a
+red→teal performance scale for heat maps. Body 15.5 px, tables 14.5 px, metadata ≥ 13 px. Tokens
+are CSS custom properties in `app/globals.css`. Motion is subtle and disabled under
+`prefers-reduced-motion`.
 
-`components/layout/` contains the app shell, role-aware navigation, notices, and page headings. `components/product-page.tsx` composes the shared academic views and Faculty/HOD dashboard variants. `components/login-form.tsx` owns the role picker, demo login, and greeting/boot sequence. `components/semester-selector.tsx` provides the accessible semester switch. `components/skeletons/` provides shimmer layouts for workspace loading. `components/animations/motion-primitives.tsx` provides reusable reveal, mesh, cursor, magnetic, tilt, and counter primitives. The landing-page pinned workflow uses Framer Motion scroll progress without intercepting native scrolling. `components/sections/social-proof.tsx` contains clearly labeled placeholder logos and fictional demo testimonials. Reduced-motion preferences disable ambient animation and replace the pinned scene with a static sequence.
-
-## Demo data and API boundary
-
-Fictional records are defined in `lib/mock/data.ts` and typed in `types/academic.ts`. `lib/api/client.ts` defines the `AcademicDataSource` seam; keep UI DTOs stable and add a real source implementation there when API contracts are ready. Replace demo imports with source-backed data in page loaders or hooks. The import preview explicitly does not parse the selected file.
-
-## Authentication
-
-`lib/auth/session.tsx` isolates UI session state from the API adapter. The Faculty and HOD demo accounts are documented in `AUTH_FLOW.md`; demo auth never contacts the backend. Remembered demo sessions and semester/course context use browser storage. Replace this layer with a reviewed server-backed session/auth adapter when backend auth is ready. Do not store long-lived refresh tokens in browser storage. UI role visibility is not authorization; enforce role and department scope on the server.
+UI visibility is never authorisation: the server enforces scope on every request.

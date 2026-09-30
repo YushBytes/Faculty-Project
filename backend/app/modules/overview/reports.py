@@ -547,7 +547,7 @@ def to_pdf(report: Report, overview: dict[str, Any]) -> bytes:
         hb.valueAxis.labels.fontSize = 7
         hb.bars[0].fillColor = c("#2563EB")
         d.add(hb)
-        story.append(PageBreak())
+        story.append(Spacer(1, 8))
         story.append(d)
 
     # Tables from the report model (the same rows the CSV/XLSX contain)

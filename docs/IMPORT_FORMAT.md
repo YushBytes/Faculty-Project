@@ -30,12 +30,27 @@ Implementation: `backend/app/modules/imports/` (engine: `validation.py`, a pure 
   can view the offering may upload and see history.
 - Row numbers everywhere are **spreadsheet row numbers** (header = row 1 unless blank rows precede it).
 
+## SRM TLP reports and multi-file uploads
+
+`POST /api/v1/tlp-uploads` (multipart `files`, optional `course_id` / `term_id` / `offering_id`)
+accepts up to 150 TLP5 reports at once. For each file the title block (`Test Name`, `Academic
+Year`, `Component Max. Mark`, `course(name) handled by faculty(id)`) and summary block (`Total
+strength`, `Total absentees`, ranges) are parsed; the file is routed to the course's offering in
+that term whose ACTIVE enrolments contain most of its register numbers (at least half, and
+strictly more than any other), and to the assessment named by `Test Name` (`FJ-II` = `FJ-2`).
+Title-block checks: `course_mismatch`, `term_mismatch`, `wrong_assessment`, `max_mismatch` and
+`summary_mismatch` are errors; `faculty_mismatch` and an absentee count that differs are warnings.
+`GET /tlp-uploads/{group}` returns every staged file's status; `POST /tlp-uploads/{group}/confirm`
+confirms each confirmable file in its own transaction and publishes its assessment.
+
 ## Accepted files
 
-- `.xlsx` (first sheet) or UTF-8 `.csv` (comma, semicolon or tab). The type is detected from the
-  file bytes, not the name; `.xls`, `.pdf`, zips and non-UTF-8 text are rejected.
-- At most 5 MB, 5000 data rows, 200 columns. Blank leading rows are skipped; the first non-blank
-  row is the header row. Fully blank data rows are skipped and reported as info.
+- `.xlsx` (first sheet), UTF-8 `.csv` (comma, semicolon or tab), or an SRM TLP-format text
+  `.pdf`. The type is detected from the file bytes, not the name; `.xls`, other PDFs, zips and
+  non-UTF-8 text are rejected.
+- At most 5 MB, 5000 data rows, 200 columns. The header row is the first row naming a register
+  number column (else the first non-blank row); title rows above it and the summary block below the
+  table ("Total strength", ranges, signatures) are kept as metadata, never read as students. Fully blank data rows are skipped and reported as info.
 - Every cell is read as a **raw string**. Nothing is converted to a number until validation, and
   nothing is ever converted to 0.
 

@@ -938,7 +938,9 @@ def validate(staged: Staged, snapshot: Snapshot) -> Preview:
             cell.status, cell.score = status, score
             cell.issues.extend(issues)
             pct_col = next((c.header for c in columns if c.role == "percentage"), None)
-            if pct_col is not None and status is not None:
+            # A corrected mark supersedes the percentage the file derived from the old one
+            # (the correction itself is audited with the uploaded value).
+            if pct_col is not None and status is not None and not cell.fixed:
                 cell.issues.extend(
                     check_percentage(
                         value(row, pct_col)[1],

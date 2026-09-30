@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
-import { AuthProvider } from "@/lib/auth/session";
+import { SessionProvider } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "ACADLYTICS — Academic Performance Intelligence",
-  description: "A clear, faculty-led workspace for assessment outcomes and student support.",
+  description: "Academic performance intelligence for SRM Institute of Science and Technology: reliable ingestion, deterministic analytics, attention, interventions and reports across the academic hierarchy.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className="h-full antialiased"
-    >
-      <body className="min-h-full flex flex-col"><AuthProvider>{children}</AuthProvider></body>
+    <html lang="en">
+      <body>
+        <Suspense>
+          <SessionProvider>{children}</SessionProvider>
+        </Suspense>
+      </body>
     </html>
   );
 }
