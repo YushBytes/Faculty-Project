@@ -10,16 +10,12 @@ import { ApiError } from "@/lib/api/http";
 import type { Workspace } from "@/lib/api/types";
 import { ROLE_LABEL, initials } from "@/lib/format";
 
-/** Fictional demo accounts of the seeded demo institution (documented in the README). */
+/** The sign-in accounts an empty platform starts with (see backend/app/bootstrap.py). Faculty
+ * accounts are created from the TLP reports as <staff id>@srmist.edu.in. */
 const DEMO = [
   ["admin@acadlytics.dev", "Administrator"],
   ["hod.cse@acadlytics.dev", "Head of Department · CSE"],
-  ["academic.head@acadlytics.dev", "Academic Head"],
-  ["coord.dsa@acadlytics.dev", "Course Coordinator · DSA"],
-  ["coord.os@acadlytics.dev", "Course Coordinator · OS"],
-  ["coord.app@acadlytics.dev", "Course Coordinator · APP"],
-  ["faculty1@acadlytics.dev", "Faculty"],
-  ["faculty2@acadlytics.dev", "Faculty"],
+  ["academic.head@acadlytics.dev", "Academic Head · CSE"],
 ];
 const STEPS = ["Verifying your account", "Resolving your academic scope", "Loading the current semester", "Preparing your workspace"];
 
@@ -67,7 +63,7 @@ export function LoginView() {
   }
 
   if (boot) {
-    const first = boot.user.full_name.replace(/^(Dr|Mr|Ms|Mrs|Prof)\.?\s+/i, "").split(" ")[0];
+    const first = boot.user.full_name.replace(/^(Dr|Mr|Ms|Mrs|Prof)\.?\s+/i, "");
     return (
       <div className="boot" role="status">
         <motion.div className="boot-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}>
@@ -108,11 +104,11 @@ export function LoginView() {
             <button className="btn btn-primary" style={{ height: 48 }} disabled={busy || status === "loading"}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</button>
           </form>
           <details className="demo-accounts">
-            <summary>Demonstration accounts (fictional data)</summary>
+            <summary>Sign-in accounts</summary>
             {DEMO.map(([address, label]) => (
               <div className="acc" key={address}><span><b>{label}</b><br /><span className="muted">{address}</span></span><button type="button" onClick={() => { setEmail(address); setPassword(""); }}>Use</button></div>
             ))}
-            <div className="acc"><span className="muted">The demo password is in the project README.</span></div>
+            <div className="acc"><span className="muted">Faculty sign in with <b>staff id</b>@srmist.edu.in once a TLP report naming them is uploaded. Initial passwords are in the project README.</span></div>
           </details>
         </div>
       </section>

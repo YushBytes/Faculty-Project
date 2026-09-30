@@ -126,7 +126,15 @@ class ConfirmResult(BaseModel):
 # ------------------------------------------------------------------ multi-file TLP uploads
 
 TlpFileStatus = Literal[
-    "valid", "warning", "error", "rejected", "duplicate", "skipped", "confirmed", "discarded"
+    "valid",
+    "warning",
+    "error",
+    "rejected",
+    "needs_section",
+    "duplicate",
+    "skipped",
+    "confirmed",
+    "discarded",
 ]
 
 
@@ -134,6 +142,7 @@ class TlpFileResult(BaseModel):
     """One file of a multi-file upload.
 
     ``rejected``  could not be staged at all (unreadable, not routable); nothing was stored
+    ``needs_section`` the section could not be told; upload again with the section typed
     ``error``     staged, but has blocking errors to fix or exclude before confirming
     ``warning``   staged, confirmable, with warnings to review
     ``valid``     staged, confirmable, nothing to review
@@ -156,6 +165,9 @@ class TlpFileResult(BaseModel):
     source_metadata: dict[str, Any] = Field(default_factory=dict)
     summary: dict[str, Any] = Field(default_factory=dict)
     issues: list[IssueRead] = Field(default_factory=list)
+    # What this file set up on the platform (term, course, section, class, students,
+    # faculty login, assessment). Empty when everything already existed.
+    created: dict[str, Any] = Field(default_factory=dict)
 
 
 class TlpUploadRead(BaseModel):

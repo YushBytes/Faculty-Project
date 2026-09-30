@@ -329,6 +329,15 @@ class ImportService:
         batch = self._editable(batch_id, actor, allow_expired=True)
         batch.status = ImportStatus.DISCARDED
         self._session.commit()
+        ids = ((batch.source_metadata or {}).get("provisioned") or {}).get("ids")
+        if ids:
+            # The upload set records up from the file; take back what nothing else uses.
+            from app.modules.imports.provision import remove_provisioned
+
+            self._session.refresh(batch)
+            self._session.expunge(batch)
+            remove_provisioned(self._session, batch.id, ids)
+            self._session.commit()
         return batch
 
     # ================================================================ confirm

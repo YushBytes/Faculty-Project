@@ -31,11 +31,11 @@ Prerequisites: **Docker Desktop** (Windows/macOS) or Docker Engine + Compose v2.
 git clone https://github.com/YushBytes/Faculty-Project.git
 cd Faculty-Project
 git checkout backend
-docker compose up -d --build          # db + api (runs migrations) + web
-docker compose exec api python -m app.cli seed-demo   # ~2-3 minutes, once
+docker compose up -d --build          # db + api + web
 ```
 
-Then open **http://localhost:3000** and sign in with a demo account (below).
+Open **http://localhost:3000**. The platform starts **empty**: no semesters, courses,
+sections, students or marks. Everything comes from the TLP reports you upload.
 
 | Service | URL |
 |---|---|
@@ -44,69 +44,52 @@ Then open **http://localhost:3000** and sign in with a demo account (below).
 | API docs (OpenAPI / Swagger) | http://localhost:8000/docs |
 | Health | http://localhost:8000/health |
 
-Stop with `docker compose down` (data is kept in the `pgdata` volume);
-`docker compose down -v` also deletes the database. To re-seed, run `down -v`, `up -d` and
-`seed-demo` again — seed-demo only runs on an empty database.
+Stop with `docker compose down` (data is kept in the `pgdata` volume).
+`docker compose down -v` deletes the database; the next `up` starts empty again.
 
-## 2. Demo accounts (fictional)
+## 2. Sign-in accounts
 
-Every account uses the password **`Demo@2026pass`**. All people, names, register numbers
-(`RA2411999…`) and staff ids (`9xxxxx`) are generated; nothing is real.
+On an empty database the API creates only the people who run the platform:
 
-| Role | Email |
+| Role | Email | Password |
+|---|---|---|
+| Administrator | `admin@acadlytics.dev` | `Demo@2026pass` |
+| HOD, Computer Science and Engineering | `hod.cse@acadlytics.dev` | `Demo@2026pass` |
+| Academic Head, CSE | `academic.head@acadlytics.dev` | `Demo@2026pass` |
+| **Faculty** — created from the reports | `<staff id>@srmist.edu.in` (e.g. `902049@srmist.edu.in`) | `Faculty@2026` |
+
+Set `ACADLYTICS_INITIAL_PASSWORD` (and `FACULTY_DEFAULT_PASSWORD`) in `.env` to change the
+initial passwords; production refuses to start without the first one. Course Coordinators are
+appointed in the app (*Team & roles*) once their courses exist.
+
+## 3. Upload TLP reports
+
+Sign in as the HOD, Academic Head or Administrator → **Import TLP marks** → drop the reports
+(Excel, CSV or TLP PDF; any number, one per section) → **Upload and validate** → **Confirm**.
+
+From each file the platform reads and sets up, reusing anything that already exists:
+
+| From the report | Becomes |
 |---|---|
-| Administrator | `admin@acadlytics.dev` |
-| HOD, Computer Science and Engineering | `hod.cse@acadlytics.dev` |
-| Academic Head | `academic.head@acadlytics.dev` |
-| Course Coordinator — Data Structures and Algorithms (21CSC201J) | `coord.dsa@acadlytics.dev` |
-| Course Coordinator — Operating Systems (21CSC202J) | `coord.os@acadlytics.dev` |
-| Course Coordinator — Advanced Programming Practice (21CSC203P) | `coord.app@acadlytics.dev` |
-| Course Coordinator — Design Thinking and Methodology (21DCS201P) | `coord.dt@acadlytics.dev` |
-| Course Coordinators — DAA (21CSC204J), DBMS (21CSC205P), odd semester | `coord.daa@…`, `coord.dbms@…` |
-| Faculty | `faculty1@acadlytics.dev` … `faculty100@acadlytics.dev` |
+| `Academic Year : AY2025-26-EVEN` | the semester (the latest one is the current semester) |
+| `21CSC201J(Data Structures and Algorithms)` | the course; its type (J = theory + lab) from the code |
+| `handled by Dr. Kavya Iyer(902049)` | the faculty member, with a login `902049@srmist.edu.in`, assigned to the class |
+| `Test Name : FJ-II`, `Component Max. Mark: 15.00` | the assessment and its maximum |
+| each `Reg. No` + `Name` row | the student (admission year from the register number) and their enrolment |
+| `Obtained Mark` / `Absent` | the marks — written only when you confirm; Absent stays absent, never 0 |
 
-### The demo institution
+**The section** is not printed on TLP reports, so it is taken, in this order, from:
+1. where the file's students already are (an earlier upload placed them), else
+2. the file name — `DSA_FJ-II_A1.xlsx`, `CSE sec B2.pdf` → A1, B2, else
+3. you: the file shows **Section needed** with a box to type it.
 
-One department with the full hierarchy, **97 sections** (A1 … N6) of the 2024 batch,
-**~4,100 students**, **106 teaching staff**, and AY 2025-26:
+A file name that contradicts where its students already are is stopped with the reason.
+Existing student names are never overwritten. **Discarding** a staged file also removes whatever
+it set up that nothing else uses, so a wrong file leaves no trace.
 
-* **Odd semester (complete):** 21CSC204J DAA, 21CSC205P DBMS
-* **Even semester (current, in progress):** 21CSC201J DSA, 21CSC202J OS, 21CSC203P APP,
-  21DCS201P Design Thinking
-
-Assessments follow the SRM scheme for each course type (joint: FJ-I, LLJ-I, FJ-II, FJ-III,
-LLJ-II; project: FP-I, PBL-I…), with component maximum = contribution as on TLP reports. Sections
-have deliberately different, reproducible profiles — high performing, average, borderline, high
-failure, declining, improving, incomplete data, volatile — and DSA's FJ-II is a harder paper, so
-the charts show real spikes and drops. DSA's FJ-II marks for 12 sections were imported through the
-real TLP pipeline (so import history is genuine), and FJ-III is still missing for 37 sections —
-that is what the upload demo fills in.
-
-The section count is data, not code: add or remove sections under **Academic structure**, or run
-`seed-demo --sections 20` for a smaller demo.
-
-## 3. Demonstration flows
-
-1. **Administrator** → Overview (institution) → *Departments* → CSE → *Courses* → a course →
-   *Sections* → a class → *Reports* → PDF.
-2. **HOD** → Overview: 97 sections, course/section/faculty comparisons, heat maps, attention →
-   *Sections* (the 97-tile map) → *Faculty* → *Attention* → *Reports*.
-3. **Academic Head** → *Coordinators* (portfolio, assign/replace a coordinator) → *Courses* →
-   a course → *Faculty* tab → *Reports*.
-4. **DSA Course Coordinator** → Overview (all 97 DSA sections) → *Faculty* comparison →
-   *Import TLP marks* → drop **every file in `demo/tlp-uploads/`** at once:
-   * 8 files (xlsx, csv and TLP pdf) route themselves to sections I5–J5 and to FJ-III → **Valid**
-   * `*_wrong-max.pdf` → **Errors**: the report's component maximum is 20, FJ-III is out of 15
-   * `*_needs-fix.xlsx` → **Errors**: one mark above the maximum → *Review* → type the corrected
-     mark → *Apply* (audited) → it becomes valid
-   * **Confirm** → marks are written, FJ-III is published, analytics recompute; the dashboard,
-     heat map and attention change immediately → *Reports*.
-5. **Faculty** (`faculty1@…`) → *My classes* → a class → *Marks*, *Assessments*, *Attention* →
-   *Intervene* on a flagged student → *Interventions* → *Reports*.
-
-All flows use one database. The real SRM FP-I PDF also parses (title block, 58 rows, summary),
-but its students are not in the demo, so it is rejected with "none of the file's students is
-enrolled" — the correct answer.
+`demo/tlp-uploads/` has four sample reports (fictional students) to try this on an empty
+platform: two DSA sections, one DSA file without a section in its name, and an OS report for
+the A1 students.
 
 ## 4. Run without Docker (development)
 
@@ -123,7 +106,7 @@ python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 cp ../.env.example .env                         # adjust DATABASE_URL if needed
 alembic upgrade head
-python -m app.cli seed-demo
+python -m app.cli bootstrap                     # the sign-in accounts (empty database only)
 uvicorn app.main:app --reload --port 8000
 
 # frontend (second terminal)
@@ -142,7 +125,7 @@ cd frontend && npm run lint && npm run build
 ```
 
 The backend suite (~1,900 tests) runs against real PostgreSQL: auth, the five-role scope and
-IDOR checks, TLP import in all three formats, routing and title-block verification, aggregate
+IDOR checks, TLP import in all three formats, set-up from the reports, routing and title-block verification, aggregate
 analytics consistency with the class engine, report downloads, migrations, seed.
 
 ## 6. How it works
@@ -155,11 +138,11 @@ coordinated, classes taught, terms and capabilities; the UI is built from that a
 
 **TLP ingestion** (`backend/app/modules/imports/`): SRM TLP5 reports as `.xlsx`, `.csv` or text
 PDF (parsed line by line, strictly; a scanned or foreign PDF is refused, never guessed). The title
-block (test name, academic year, component maximum, course, faculty id) and summary block
-(strength, absentees, ranges) are kept and **checked** against the platform: wrong course,
-semester, assessment or maximum, or a truncated file, block the import. Multi-file uploads route
-each file to its section by the register numbers it contains. Every file goes through the same
-stage → preview → fix/exclude → atomic confirm pipeline, with audit.
+block (test name, academic year, component maximum, course, faculty id) sets up whatever does
+not exist yet (`imports/provision.py`), and with the summary block (strength, absentees,
+ranges) it is **checked** against the platform: a maximum that disagrees with the assessment,
+marks above it, a % that does not match, or a truncated file block the import. Every file goes
+through the same stage → preview → fix/exclude → atomic confirm pipeline, with audit.
 
 **Analytics** (`backend/app/modules/analytics/`): a deterministic engine per class. Every class's
 result is materialised in `offering_summaries` (refreshed in the same transaction as any mark
@@ -180,7 +163,9 @@ observations, never causes.
 | Web shows "The ACADLYTICS server is not reachable" | The API is still starting or failed: `docker compose logs api`. |
 | `port is already allocated` | Something else uses 5432/8000/3000: set `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` in `.env`. |
 | Build fails with `No matching distribution found`, `short read` or `unexpected EOF` | The network dropped during a download (pip and npm already retry). Run `docker compose build` again; finished layers are cached. |
-| `seed-demo` says the database already has users | It only seeds an empty database: `docker compose down -v`, `up -d`, seed again. |
+| A file shows **Section needed** | TLP reports do not name the section: type it in the box, or name the file with it (`…_A1.xlsx`). |
+| "The file name says section A2, but … are already in section A1" | The file is probably mislabelled; rename it, or type the right section. |
+| Want the old 97-section demo institution | `docker compose exec api python -m app.cli seed-demo` on an **empty** database (fictional data; do not mix with real reports). |
 | Signed out on every refresh | You are on plain http with `NODE_ENV=production` outside Compose: set `ACADLYTICS_INSECURE_COOKIES=1` (local only). |
 | Docker Hub pull errors ("HTTP response to HTTPS client") | Transient registry/proxy issue; run `docker compose up -d --build` again. |
 | A PDF is rejected | Only SRM TLP-format text PDFs are read; upload the Excel/CSV export for other layouts. |
@@ -191,7 +176,7 @@ observations, never causes.
 backend/    FastAPI app: modules/{auth,users,organization,students,assessments,imports,
             analytics,attention,interventions,reports,overview,audit}, Alembic 0001–0008, tests
 frontend/   Next.js 16 app: app/(app)/* pages, components/, lib/api (typed adapters), lib/auth
-demo/       TLP upload demo files (generated by seed-demo; fictional)
+demo/       sample TLP reports (fictional students) for trying uploads
 docs/       data model, import format, analytics specification and contracts
 ```
 

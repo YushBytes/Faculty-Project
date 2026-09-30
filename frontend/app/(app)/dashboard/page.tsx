@@ -19,7 +19,7 @@ export default function Dashboard() {
   const ws = useWorkspace();
   const scope = useScope();
   const role = ws.user.role;
-  const first = ws.user.full_name.replace(/^(Dr|Mr|Ms|Mrs|Prof)\.?\s+/i, "").split(" ")[0];
+  const first = ws.user.full_name.replace(/^(Dr|Mr|Ms|Mrs|Prof)\.?\s+/i, "");
   const question = {
     ADMIN: "What is happening across the institution?",
     HOD: `What is happening across ${ws.department?.name ?? "the department"}?`,
@@ -30,7 +30,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        eyebrow={`${ws.headline} · ${semesterLabel(scope.semester)} · AY ${scope.academic_year ?? ""}`}
+        eyebrow={scope.academic_year ? `${ws.headline} · ${semesterLabel(scope.semester)} · AY ${scope.academic_year}` : ws.headline}
         title={`Welcome back, ${first}.`}
         description={question}
         actions={<>

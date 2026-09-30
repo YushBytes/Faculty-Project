@@ -15,6 +15,7 @@ import {
 import { insightsApi } from "@/lib/api/endpoints";
 import type { CompareRow, Overview, ScopeFilters, StudentEntry } from "@/lib/api/types";
 import { useApi } from "@/lib/hooks/use-api";
+import { useWorkspace } from "@/lib/auth/session";
 import { RULES, SEGMENTS, dateTime, num, pct, pctOf } from "@/lib/format";
 import { Badge, BarCell, Card, DataTable, Delta, Empty, ErrorState, Kpi, LoadingDashboard, MeasureValue, Tabs } from "@/components/ui";
 import { GroupedBars, Heatmap, Histogram, MultiTrend, PassDonut, RankBars, RuleBars, Sparkline, TrendChart } from "@/components/charts";
@@ -50,13 +51,7 @@ function OverviewBody({ data, variant, filters }: { data: Overview; variant: Var
   const latestMove = [...data.trend].reverse().find((t) => t.change !== null);
 
   if (data.counts.offerings === 0) {
-    return (
-      <Card>
-        <Empty title="No classes in this scope for the selected period" icon={<BookOpen size={24} />}>
-          Choose another semester or academic year from the period selector, or check the filters.
-        </Empty>
-      </Card>
-    );
+    return <NoClasses />;
   }
 
   return (
@@ -327,5 +322,28 @@ function Activity({ data }: { data: Overview }) {
         </Card>
       </div>
     </section>
+  );
+}
+
+/** Nothing in scope: on a new platform that means nothing has been imported yet. */
+function NoClasses() {
+  const ws = useWorkspace();
+  if (!ws.academic_years.length) {
+    return (
+      <Card>
+        <Empty title="No marks imported yet" icon={<Upload size={24} />}>
+          Everything here comes from SRM TLP reports. Import them — Excel, CSV or PDF — and the
+          semester, courses, sections, faculty, students and marks are set up from the files.{" "}
+          <Link href="/import" style={{ fontWeight: 700 }}>Import TLP marks →</Link>
+        </Empty>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <Empty title="No classes in this scope for the selected period" icon={<BookOpen size={24} />}>
+        Choose another semester or academic year from the period selector, or check the filters.
+      </Empty>
+    </Card>
   );
 }

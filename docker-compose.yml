@@ -24,7 +24,12 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acadlytics}:${POSTGRES_PASSWORD:-acadlytics}@db:5432/${POSTGRES_DB:-acadlytics}
-      # seed-demo writes its TLP demo files here (copies are committed under demo/tlp-uploads)
+      # First start on an empty database creates the admin / HOD / Academic Head logins.
+      ACADLYTICS_INITIAL_PASSWORD: ${ACADLYTICS_INITIAL_PASSWORD:-Demo@2026pass}
+      # Faculty found in uploaded TLP reports sign in as <staff id>@<domain> with this.
+      FACULTY_DEFAULT_PASSWORD: ${FACULTY_DEFAULT_PASSWORD:-Faculty@2026}
+      INSTITUTION_EMAIL_DOMAIN: ${INSTITUTION_EMAIL_DOMAIN:-srmist.edu.in}
+      # Only used by the optional `seed-demo` command.
       ACADLYTICS_DEMO_DIR: /tmp/acadlytics-demo
     ports:
       - "${API_PORT:-8000}:8000"

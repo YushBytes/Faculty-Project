@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # seconds are treated as a race, not token theft. 0 disables the allowance.
     refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
 
+    # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") sign in as
+    # <staff id>@<domain> with this initial password until they change it.
+    institution_email_domain: str = "srmist.edu.in"
+    faculty_default_password: str = Field(default="Faculty@2026", min_length=8)
+
     @field_validator("database_url")
     @classmethod
     def _require_postgres_psycopg(cls, value: str) -> str:

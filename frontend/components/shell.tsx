@@ -51,7 +51,8 @@ export function PeriodSelect() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  if (!workspace) return null;
+  // No semester exists until the first TLP report is imported: nothing to choose yet.
+  if (!workspace || !workspace.academic_years.length) return null;
   // A link can pin a period (?year=&sem=); show the one the page is actually using.
   const period = {
     academic_year: params.get("year") ?? saved.academic_year,

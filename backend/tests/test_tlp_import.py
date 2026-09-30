@@ -198,7 +198,8 @@ def test_coordinator_multi_file_upload_routes_stages_and_confirms(
     assert status["A1_FT2.xlsx"]["status"] in ("valid", "warning")
     assert "4 of 4" in status["A2_FT2.pdf"]["routed_by"]
     assert status["copy_of_A1.xlsx"]["status"] == "skipped"
-    assert status["unknown.csv"]["status"] == "rejected"
+    # Students in no section yet, and no section in the file name: the screen asks for it.
+    assert status["unknown.csv"]["status"] == "needs_section"
     assert status["not_a_report.csv"]["status"] == "rejected"
     assert body["counts"]["total"] == 5
 

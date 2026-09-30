@@ -1,3 +1,4 @@
+import json
 import uuid
 from typing import Annotated, Literal
 
@@ -20,7 +21,7 @@ from app.modules.imports.schemas import (
     TlpUploadRead,
 )
 from app.modules.imports.service import ImportService, preview_read
-from app.modules.imports.tlp_service import TlpUploadService
+from app.modules.imports.tlp_service import RoutingError, TlpUploadService
 
 DB = Annotated[Session, Depends(get_db)]
 Only = Annotated[
@@ -253,10 +254,29 @@ async def upload_tlp(
     course_id: Annotated[uuid.UUID | None, Form()] = None,
     term_id: Annotated[uuid.UUID | None, Form()] = None,
     offering_id: Annotated[uuid.UUID | None, Form()] = None,
+    group_id: Annotated[
+        uuid.UUID | None, Form(description="Add the files to an earlier upload's group")
+    ] = None,
+    sections: Annotated[
+        str | None,
+        Form(description='JSON object: file name -> section, e.g. {"report.pdf": "A1"}'),
+    ] = None,
 ) -> TlpUploadRead:
+    try:
+        section_map = json.loads(sections) if sections else {}
+    except ValueError as exc:
+        raise RoutingError("'sections' must be a JSON object of file name -> section.") from exc
+    if not isinstance(section_map, dict):
+        raise RoutingError("'sections' must be a JSON object of file name -> section.")
     contents = [(f.filename, await f.read()) for f in files]
     return TlpUploadService(db).upload(
-        contents, actor=actor, course_id=course_id, term_id=term_id, offering_id=offering_id
+        contents,
+        actor=actor,
+        course_id=course_id,
+        term_id=term_id,
+        offering_id=offering_id,
+        sections={str(k): str(v) for k, v in section_map.items() if v},
+        group_id=group_id,
     )
 
 

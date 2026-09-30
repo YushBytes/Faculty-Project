@@ -30,6 +30,7 @@ from app.core.errors import AppError, NotFoundError
 from app.core.tabular import IDENTITY_HEADERS, Table, normalise_header, read_table
 from app.modules.assessments.models import Assessment
 from app.modules.imports.models import ImportBatch, ImportStatus
+from app.modules.imports.provision import Provisioner, SectionRequiredError
 from app.modules.imports.schemas import IssueRead, TlpFileResult, TlpUploadRead
 from app.modules.imports.service import ImportService
 from app.modules.imports.tlp import parse_metadata
@@ -70,12 +71,18 @@ class TlpUploadService:
         course_id: uuid.UUID | None = None,
         term_id: uuid.UUID | None = None,
         offering_id: uuid.UUID | None = None,
+        sections: dict[str, str] | None = None,
+        group_id: uuid.UUID | None = None,
     ) -> TlpUploadRead:
+        """``sections`` maps a file name to the section it is for, when neither the file name
+        nor the file's students tell (the upload screen asks for it)."""
+        sections = sections or {}
         if not files:
             raise RoutingError("Choose at least one file.")
         if len(files) > MAX_FILES:
             raise RoutingError(f"Upload at most {MAX_FILES} files at a time.")
-        group_id = uuid.uuid4()
+        # A file re-sent with its section joins the upload it came from.
+        group_id = group_id or uuid.uuid4()
         seen: dict[str, str] = {}
         results: list[TlpFileResult] = []
         for name, content in files:
@@ -100,6 +107,7 @@ class TlpUploadService:
                     course_id=course_id,
                     term_id=term_id,
                     offering_id=offering_id,
+                    section=sections.get(file_name),
                 )
             )
         return TlpUploadRead(group_id=group_id, files=results, counts=_counts(results))
@@ -114,8 +122,10 @@ class TlpUploadService:
         course_id: uuid.UUID | None,
         term_id: uuid.UUID | None,
         offering_id: uuid.UUID | None,
+        section: str | None = None,
     ) -> TlpFileResult:
         metadata: dict = {}
+        created: dict = {}
         try:
             table = read_table(file_name, content)
             metadata = parse_metadata(table.preamble, table.trailer)
@@ -123,6 +133,8 @@ class TlpUploadService:
                 route = _Route(
                     self._access.get(actor, offering_id, Access.VIEW), "chosen in the upload"
                 )
+            elif metadata.get("course_code") and course_id is None and term_id is None:
+                route, created = self._provision(table, metadata, actor, file_name, section)
             else:
                 route = self._route(table, metadata, actor, course_id, term_id)
             batch, _ = self._imports._stage(
@@ -133,6 +145,14 @@ class TlpUploadService:
                 actor,
                 table=table,
                 upload_group_id=group_id,
+            )
+        except SectionRequiredError as exc:
+            self._session.rollback()
+            return TlpFileResult(
+                file_name=file_name,
+                status="needs_section",
+                message=exc.message,
+                source_metadata=metadata,
             )
         except AppError as exc:
             self._session.rollback()
@@ -147,7 +167,27 @@ class TlpUploadService:
                     if isinstance(d, dict) and "message" in d
                 ],
             )
+        if created:
+            batch.source_metadata = {**(batch.source_metadata or {}), "provisioned": created}
+            self._session.commit()
         return self._result(batch, routed_by=route.explanation)
+
+    def _provision(
+        self, table: Table, metadata: dict, actor: User, file_name: str, section: str | None
+    ) -> tuple[_Route, dict]:
+        """Find or set up the class the report describes (see ``provision.py``)."""
+        provisioner = Provisioner(self._session, actor)
+        done = provisioner.provision(table, metadata, file_name=file_name, section_hint=section)
+        made = {k for k in done.created if k not in ("ids", "section_source")}
+        offering = done.offering
+        if made - {"enrolments"}:
+            provisioner.check_permission(offering.course, metadata)
+        elif made:
+            # Only enrolling students into an existing class: its administrators may.
+            self._access.get(actor, offering.id, Access.ADMINISTER)
+        # Whatever was set up must be within the uploader's scope.
+        self._access.get(actor, offering.id, Access.VIEW)
+        return _Route(offering, done.explanation), (done.created if made else {})
 
     def _route(
         self,
@@ -332,8 +372,15 @@ class TlpUploadService:
             assessment_id=assessment.id if assessment else None,
             assessment_name=assessment.name if assessment else None,
             routed_by=routed_by,
-            source_metadata=dict(batch.source_metadata or {}),
+            source_metadata={
+                k: v for k, v in (batch.source_metadata or {}).items() if k != "provisioned"
+            },
             summary=summary,
+            created={
+                k: v
+                for k, v in ((batch.source_metadata or {}).get("provisioned") or {}).items()
+                if k not in ("ids", "section_source")
+            },
         )
 
 

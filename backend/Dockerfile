@@ -26,5 +26,6 @@ USER appuser
 
 EXPOSE 8000
 
-# Apply migrations, then serve. Migrations are idempotent (no-op when already at head).
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Apply migrations, create the sign-in accounts on an empty database, then serve. Both steps
+# are idempotent (no-ops once done).
+CMD ["sh", "-c", "alembic upgrade head && python -m app.cli bootstrap && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

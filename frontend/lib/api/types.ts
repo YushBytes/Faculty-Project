@@ -126,10 +126,16 @@ export type ImportPreview = {
 
 export type TlpFile = {
   file_name: string;
-  status: "valid" | "warning" | "error" | "rejected" | "duplicate" | "skipped" | "confirmed" | "discarded";
+  status: "valid" | "warning" | "error" | "rejected" | "needs_section" | "duplicate" | "skipped" | "confirmed" | "discarded";
   message: string | null; batch_id: string | null; offering_id: string | null; offering_label: string | null;
   section_name: string | null; assessment_id: string | null; assessment_name: string | null; routed_by: string | null;
   source_metadata: Record<string, unknown>; summary: Record<string, number | boolean>; issues: IssueRead[];
+  /** What this file set up on the platform (empty when everything already existed). */
+  created: TlpCreated;
+};
+export type TlpCreated = {
+  term?: string; course?: string; section?: string; offering?: string; students?: number; enrolments?: number;
+  faculty?: { name: string; email: string; staff_id: string }; faculty_assigned?: string; assessment?: string;
 };
 export type TlpUpload = { group_id: string; files: TlpFile[]; counts: Record<string, number> };
 

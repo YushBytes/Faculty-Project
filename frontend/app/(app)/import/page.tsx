@@ -17,6 +17,7 @@ const STATUS: Record<TlpFile["status"] | "uploading", { label: string; tone: "gr
   warning: { label: "Warnings", tone: "amber", icon: <AlertTriangle size={14} /> },
   error: { label: "Errors", tone: "red", icon: <XCircle size={14} /> },
   rejected: { label: "Rejected", tone: "red", icon: <XCircle size={14} /> },
+  needs_section: { label: "Section needed", tone: "amber", icon: <AlertTriangle size={14} /> },
   duplicate: { label: "Duplicate", tone: "violet", icon: <Copy size={14} /> },
   skipped: { label: "Skipped", tone: undefined, icon: <SkipForward size={14} /> },
   confirmed: { label: "Confirmed", tone: "green", icon: <CheckCircle2 size={14} /> },
@@ -37,6 +38,8 @@ export default function ImportPage() {
   const [confirming, setConfirming] = useState(false);
   const [review, setReview] = useState<TlpFile | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // The files of the last upload, so one that needs its section can be sent again.
+  const [sent, setSent] = useState<Map<string, File>>(() => new Map());
 
   const offering = useApi(() => offeringsApi.get(offeringId), [offeringId], !!offeringId);
   const courses = useApi(() => insightsApi.overview({ academic_year: scope.academic_year, semester: scope.semester }), [scope.academic_year, scope.semester], !offeringId);
@@ -54,9 +57,10 @@ export default function ImportPage() {
     setUpload(null);
     try {
       const result = await importsApi.tlpUpload(files, { offering_id: offeringId || undefined, course_id: offeringId ? undefined : courseId || undefined }, setProgress);
+      setSent(new Map(files.map((f) => [f.name, f])));
       setUpload(result);
       setFiles([]);
-      notify("Files processed", `${result.counts.total} file(s): ${num((result.counts.valid ?? 0) + (result.counts.warning ?? 0))} ready, ${num((result.counts.error ?? 0) + (result.counts.rejected ?? 0))} need attention`);
+      notify("Files processed", `${result.counts.total} file(s): ${num((result.counts.valid ?? 0) + (result.counts.warning ?? 0))} ready, ${num((result.counts.error ?? 0) + (result.counts.rejected ?? 0) + (result.counts.needs_section ?? 0))} need attention`);
     } catch (err) {
       notify("Upload failed", err instanceof ApiError ? err.message : String(err), "error");
     } finally {
@@ -72,6 +76,39 @@ export default function ImportPage() {
       const files = current.files.map((f) => (f.batch_id && byBatch.get(f.batch_id)) || f);
       return { ...current, files, counts: countOf(files) };
     });
+  }
+
+  /** Send one file again with the section typed for it; it joins the same upload. */
+  async function resend(fileName: string, section: string) {
+    const file = sent.get(fileName);
+    if (!upload || !file) return;
+    try {
+      const result = await importsApi.tlpUpload([file], { group_id: upload.group_id, sections: JSON.stringify({ [fileName]: section }) });
+      const fresh = result.files[0];
+      setUpload((current) => {
+        if (!current) return current;
+        const files = current.files.map((f) => (f.file_name === fileName && f.status === "needs_section" ? fresh : f));
+        return { ...current, files, counts: countOf(files) };
+      });
+      notify(fresh.status === "needs_section" || fresh.status === "rejected" ? "Still not routed" : `Routed to section ${fresh.section_name}`, fresh.message ?? fresh.routed_by ?? "", fresh.status === "rejected" ? "error" : undefined);
+    } catch (err) {
+      notify("Upload failed", err instanceof ApiError ? err.message : String(err), "error");
+    }
+  }
+
+  async function discard(file: TlpFile) {
+    if (!file.batch_id) return;
+    try {
+      await importsApi.discard(file.batch_id);
+      setUpload((current) => {
+        if (!current) return current;
+        const files = current.files.map((f) => (f.batch_id === file.batch_id ? { ...f, status: "discarded" as const, created: {} } : f));
+        return { ...current, files, counts: countOf(files) };
+      });
+      notify("File discarded", "Its marks were not written, and anything it had set up that nothing else uses was removed.");
+    } catch (err) {
+      notify("Discard failed", err instanceof ApiError ? err.message : String(err), "error");
+    }
   }
 
   async function confirmAll() {
@@ -99,21 +136,21 @@ export default function ImportPage() {
 
   return (
     <>
-      <PageHead eyebrow="Import" title="Import TLP marks" description="Drop one SRM TLP report per section — Excel, CSV or the TLP PDF. Each file is routed to its section by the register numbers it lists and to its assessment by its test name, then checked against the platform before anything is written." />
+      <PageHead eyebrow="Import" title="Import TLP marks" description="Drop SRM TLP reports — Excel, CSV or the TLP PDF, one per section, as many as you like. Everything is read from the files: semester, course, section, faculty, students, test and marks. Nothing is written until you confirm." />
       <div className="steps" aria-label="Progress">
         {["Choose files", "Upload & validate", "Review", "Confirm"].map((label, i) => <span key={label} className={`step ${stage > i + 1 ? "done" : stage === i + 1 ? "now" : ""}`}><i>{i + 1}</i>{label}</span>)}
       </div>
       <div className="grid g-main">
-        <Card title="1 · Files" subtitle={target ? `Uploading into ${target}` : "Files are routed automatically; choose a course only for files without a TLP title block"}>
+        <Card title="1 · Files" subtitle={target ? `Uploading into ${target}` : "Name files with their section (e.g. DSA_FJ-III_A1.xlsx) — or type it when asked"}>
           {!offeringId && (
             <div className="filters">
-              <label className="field" style={{ minWidth: 300 }}><span>Course (optional)</span>
+              <label className="field" style={{ minWidth: 300 }}><span>Course</span>
                 <select className="select" value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-                  <option value="">Detect from each file</option>
+                  <option value="">Read from each file (recommended)</option>
                   {courseOptions.map((c) => <option key={c.id} value={c.id}>{c.label} · {c.name}</option>)}
                 </select>
               </label>
-              <span className="muted" style={{ fontSize: 13.5, alignSelf: "end", paddingBottom: 10 }}>Semester is read from the report&apos;s academic year (AY2025-26-EVEN).</span>
+              <span className="muted" style={{ fontSize: 13.5, alignSelf: "end", paddingBottom: 10 }}>Choose one only for plain mark sheets that have no TLP title block.</span>
             </div>
           )}
           <div className={`dropzone ${drag ? "drag" : ""}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); add(e.dataTransfer.files); }}>
@@ -146,12 +183,13 @@ export default function ImportPage() {
             )}
           </div>
         </Card>
-        <Card title="What is checked" subtitle="Before a single mark is written">
-          <div className="statement"><CheckCircle2 size={16} /><span>The report&apos;s <b>course code</b>, <b>academic year and semester</b>, <b>test name</b> and <b>component maximum</b> match the class and assessment.</span></div>
-          <div className="statement"><CheckCircle2 size={16} /><span>Every register number belongs to a student <b>enrolled</b> in that section; names are cross-checked.</span></div>
+        <Card title="What happens" subtitle="Everything comes from your files">
+          <div className="statement"><CheckCircle2 size={16} /><span>The title block gives the <b>semester</b> (AY2025-26-EVEN), the <b>course</b> (21CSC201J and its name), the <b>faculty</b> (name and staff id — a login is created as <i>staffid</i>@srmist.edu.in) and the <b>test</b> with its maximum.</span></div>
+          <div className="statement"><CheckCircle2 size={16} /><span>The <b>section</b> comes from where the students already are, else the file name (…_A1.xlsx), else you type it. A file name that contradicts the students is stopped.</span></div>
+          <div className="statement"><CheckCircle2 size={16} /><span>Each row gives a <b>student</b> (register number and name). Existing records are reused, never overwritten.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>Marks are numbers within the maximum; <b>Absent</b> stays absent — never zero. The % column is checked against the mark.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>The summary block (strength, absentees) agrees with the rows, so a truncated export is caught.</span></div>
-          <div className="statement"><Info size={16} /><span>Confirming writes marks, audit records and analytics in one transaction per file, and publishes the assessment.</span></div>
+          <div className="statement"><Info size={16} /><span>Confirming writes marks, audit records and analytics in one transaction per file. Discarding a file also removes whatever it set up that nothing else uses.</span></div>
         </Card>
       </div>
 
@@ -166,12 +204,17 @@ export default function ImportPage() {
               return (
                 <div className="file-row" key={`${f.file_name}-${i}`}>
                   {f.file_name.endsWith(".pdf") ? <FileText size={18} color="var(--red)" /> : <FileSpreadsheet size={18} color="var(--accent)" />}
-                  <div style={{ minWidth: 0 }}><div className="fname">{f.file_name}</div><small>{f.message ?? f.routed_by ?? ""}</small></div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="fname">{f.file_name}</div><small>{f.message ?? f.routed_by ?? ""}</small>
+                    <Created created={f.created} />
+                    {f.status === "needs_section" && <SectionRetry fileName={f.file_name} canResend={sent.has(f.file_name)} onSend={resend} />}
+                  </div>
                   <div>{f.offering_label ? <><b>{f.offering_label}</b><small>{f.assessment_name ? `→ ${f.assessment_name}` : ""}</small></> : <span className="muted">Not routed</span>}</div>
                   <div>{f.batch_id ? <small>{num(sum.total_rows)} rows · {num(sum.cells_to_write)} marks · <span style={{ color: sum.errors ? "var(--red)" : undefined }}>{num(sum.errors)} errors</span> · {num(sum.warnings)} warnings{sum.created !== undefined ? ` · ${num(sum.created)} written` : ""}</small> : f.issues.map((x) => <small key={x.message}>{x.message}</small>)}</div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <Badge tone={s.tone}>{s.icon} {s.label}</Badge>
                     {f.batch_id && f.status !== "confirmed" && f.status !== "discarded" && <button className="btn btn-sm" onClick={() => setReview(f)}>Review</button>}
+                    {f.batch_id && f.status !== "confirmed" && f.status !== "discarded" && <button className="btn btn-sm btn-ghost" onClick={() => discard(f)} aria-label={`Discard ${f.file_name}`} title="Discard this file"><Trash2 size={15} /></button>}
                     {f.status === "confirmed" && f.offering_id && <Link className="btn btn-sm" href={`/classes/${f.offering_id}`}>Open class</Link>}
                   </div>
                 </div>
@@ -197,6 +240,39 @@ export default function ImportPage() {
       <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       {ws.user.role === "FACULTY" && !offeringId && <p className="muted" style={{ marginTop: 12, fontSize: 13.5 }}>Files are only routed into your own classes.</p>}
     </>
+  );
+}
+
+/** What a file set up on the platform, in one line of chips. */
+function Created({ created }: { created: TlpFile["created"] | undefined }) {
+  if (!created) return null;
+  const parts = [
+    created.term && `semester ${created.term}`,
+    created.course && `course ${created.course}`,
+    created.section && `section ${created.section}`,
+    created.students && `${num(created.students)} student${created.students === 1 ? "" : "s"}`,
+    !created.students && created.enrolments && `${num(created.enrolments)} enrolment${created.enrolments === 1 ? "" : "s"}`,
+    created.faculty && `faculty login ${created.faculty.email}`,
+    created.assessment && `test ${created.assessment}`,
+  ].filter(Boolean) as string[];
+  if (!parts.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+      <small className="muted" style={{ fontWeight: 600 }}>New:</small>
+      {parts.map((p) => <Badge key={p} tone="blue">{p}</Badge>)}
+    </div>
+  );
+}
+
+function SectionRetry({ fileName, canResend, onSend }: { fileName: string; canResend: boolean; onSend: (fileName: string, section: string) => Promise<void> }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!canResend) return <small className="muted">Rename the file with its section (e.g. …_A1.xlsx) and upload it again.</small>;
+  return (
+    <form style={{ display: "flex", gap: 8, marginTop: 8 }} onSubmit={async (e) => { e.preventDefault(); setBusy(true); await onSend(fileName, value.trim()); setBusy(false); }}>
+      <input className="input input-sm" style={{ maxWidth: 160 }} aria-label={`Section for ${fileName}`} placeholder="Section, e.g. A1" value={value} onChange={(e) => setValue(e.target.value)} />
+      <button className="btn btn-sm btn-primary" disabled={busy || !value.trim()}>{busy ? "Sending…" : "Use this section"}</button>
+    </form>
   );
 }
 

@@ -107,7 +107,7 @@ export const importsApi = {
   confirm: (batchId: string, publish = true) => api<{ created: number; updated: number; unchanged: number }>(`/imports/${batchId}/confirm`, { method: "POST", query: { publish } }),
   discard: (batchId: string) => api(`/imports/${batchId}/discard`, { method: "POST" }),
   history: (query: Query) => api<Page<ImportPreview["batch"] & { uploaded_by_id: string | null }>>("/imports", { query }),
-  tlpUpload: (files: File[], context: { course_id?: string; term_id?: string; offering_id?: string }, onProgress: (f: number) => void = () => undefined) => {
+  tlpUpload: (files: File[], context: { course_id?: string; term_id?: string; offering_id?: string; group_id?: string; sections?: string }, onProgress: (f: number) => void = () => undefined) => {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
     Object.entries(context).forEach(([key, value]) => value && form.append(key, value));
