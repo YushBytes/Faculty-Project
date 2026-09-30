@@ -8,9 +8,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Dependencies first, in their own layer: code changes then rebuild in seconds instead of
+# downloading every package again (it matters on slow connections).
 COPY pyproject.toml ./
+RUN mkdir app && touch app/__init__.py \
+    && pip install . \
+    && pip uninstall -y acadlytics-backend \
+    && rm -rf app build *.egg-info
 COPY app ./app
-RUN pip install .
+RUN pip install --no-deps .
 
 COPY alembic.ini ./
 COPY alembic ./alembic
