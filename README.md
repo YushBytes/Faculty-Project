@@ -32,7 +32,7 @@ git clone https://github.com/YushBytes/Faculty-Project.git
 cd Faculty-Project
 git checkout backend
 docker compose up -d --build          # db + api (runs migrations) + web
-docker compose exec api python -m app.cli seed-demo   # ~2 minutes, once
+docker compose exec api python -m app.cli seed-demo   # ~2-3 minutes, once
 ```
 
 Then open **http://localhost:3000** and sign in with a demo account (below).
@@ -179,6 +179,7 @@ observations, never causes.
 |---|---|
 | Web shows "The ACADLYTICS server is not reachable" | The API is still starting or failed: `docker compose logs api`. |
 | `port is already allocated` | Something else uses 5432/8000/3000: set `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` in `.env`. |
+| Build fails with `No matching distribution found`, `short read` or `unexpected EOF` | The network dropped during a download (pip and npm already retry). Run `docker compose build` again; finished layers are cached. |
 | `seed-demo` says the database already has users | It only seeds an empty database: `docker compose down -v`, `up -d`, seed again. |
 | Signed out on every refresh | You are on plain http with `NODE_ENV=production` outside Compose: set `ACADLYTICS_INSECURE_COOKIES=1` (local only). |
 | Docker Hub pull errors ("HTTP response to HTTPS client") | Transient registry/proxy issue; run `docker compose up -d --build` again. |

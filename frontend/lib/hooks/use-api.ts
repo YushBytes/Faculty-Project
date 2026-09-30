@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError } from "@/lib/api/http";
+import { ApiError, clearCache } from "@/lib/api/http";
 
 export type ApiState<T> = { data: T | null; error: ApiError | null; loading: boolean; reload: () => void };
 
@@ -39,7 +39,11 @@ export function useApi<T>(load: () => Promise<T>, key: unknown[], enabled = true
     };
   }, [requestKey, enabled]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  // An explicit reload always goes to the server.
+  const reload = useCallback(() => {
+    clearCache();
+    setNonce((n) => n + 1);
+  }, []);
   return {
     data: slot.data,
     error: slot.key === requestKey ? slot.error : null,

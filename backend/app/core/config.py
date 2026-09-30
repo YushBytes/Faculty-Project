@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=15, ge=1, le=120)
     refresh_token_expire_days: int = Field(default=7, ge=1, le=90)
+    # Concurrent refreshes of one cookie (two tabs, a reload mid-refresh) within this many
+    # seconds are treated as a race, not token theft. 0 disables the allowance.
+    refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
 
     @field_validator("database_url")
     @classmethod

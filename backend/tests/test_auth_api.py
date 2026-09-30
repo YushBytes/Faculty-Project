@@ -124,6 +124,14 @@ class TestMe:
         assert response.status_code == 403
 
 
+def _age_rotation(db_session: Session, raw_token: str, seconds: int = 120) -> None:
+    """Move a rotation out of the concurrent-refresh grace window, so reusing the token
+    is a replay rather than a race."""
+    stored = _stored(db_session, raw_token)
+    stored.revoked_at = stored.revoked_at - timedelta(seconds=seconds)
+    db_session.flush()
+
+
 class TestRefreshRotation:
     def test_rotation_issues_new_pair_and_revokes_old(
         self, client: TestClient, faculty: User, db_session: Session
@@ -148,6 +156,7 @@ class TestRefreshRotation:
     ) -> None:
         first = login(client, faculty.email)
         second = client.post(REFRESH, json={"refresh_token": first["refresh_token"]}).json()
+        _age_rotation(db_session, first["refresh_token"])
 
         replay = client.post(REFRESH, json={"refresh_token": first["refresh_token"]})
         assert replay.status_code == 401
@@ -159,15 +168,47 @@ class TestRefreshRotation:
         )
         assert _stored(db_session, second["refresh_token"]).revoked_at is not None
 
-    def test_other_sessions_unaffected_by_reuse(self, client: TestClient, faculty: User) -> None:
+    def test_other_sessions_unaffected_by_reuse(
+        self, client: TestClient, faculty: User, db_session: Session
+    ) -> None:
         laptop = login(client, faculty.email)
         phone = login(client, faculty.email)
         client.post(REFRESH, json={"refresh_token": laptop["refresh_token"]})
-        client.post(REFRESH, json={"refresh_token": laptop["refresh_token"]})  # replay
+        _age_rotation(db_session, laptop["refresh_token"])
+        replay = client.post(REFRESH, json={"refresh_token": laptop["refresh_token"]})
+        assert replay.status_code == 401
 
         assert (
             client.post(REFRESH, json={"refresh_token": phone["refresh_token"]}).status_code == 200
         )
+
+    def test_concurrent_refresh_within_grace_keeps_session(
+        self, client: TestClient, faculty: User, db_session: Session
+    ) -> None:
+        """Two tabs refreshing with the same cookie at once must not log the user out."""
+        first = login(client, faculty.email)
+        tab_a = client.post(REFRESH, json={"refresh_token": first["refresh_token"]})
+        tab_b = client.post(REFRESH, json={"refresh_token": first["refresh_token"]})
+
+        assert tab_a.status_code == 200 and tab_b.status_code == 200
+        for tab in (tab_a.json(), tab_b.json()):
+            assert _stored(db_session, tab["refresh_token"]).revoked_at is None
+            me = client.get(ME, headers={"Authorization": f"Bearer {tab['access_token']}"})
+            assert me.status_code == 200
+        assert (
+            _stored(db_session, tab_a.json()["refresh_token"]).family_id
+            == _stored(db_session, first["refresh_token"]).family_id
+        )
+
+    def test_grace_does_not_survive_logout(
+        self, client: TestClient, faculty: User, db_session: Session
+    ) -> None:
+        first = login(client, faculty.email)
+        second = client.post(REFRESH, json={"refresh_token": first["refresh_token"]}).json()
+        client.post(LOGOUT, json={"refresh_token": second["refresh_token"]})
+
+        replay = client.post(REFRESH, json={"refresh_token": first["refresh_token"]})
+        assert replay.status_code == 401
 
     def test_expired_refresh_token_rejected(
         self, client: TestClient, faculty: User, db_session: Session

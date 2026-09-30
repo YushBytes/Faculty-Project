@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FileBarChart, Upload } from "lucide-react";
-import { useScope, useSession, useWorkspace } from "@/lib/auth/session";
+import { useScope, useWorkspace } from "@/lib/auth/session";
 import { OverviewDashboard, periodQuery, type Variant } from "@/components/overview";
 import { PageHead } from "@/components/ui";
 import { semesterLabel } from "@/lib/format";
@@ -17,7 +17,6 @@ const VARIANT: Record<string, Variant> = {
 
 export default function Dashboard() {
   const ws = useWorkspace();
-  const { period } = useSession();
   const scope = useScope();
   const role = ws.user.role;
   const first = ws.user.full_name.replace(/^(Dr|Mr|Ms|Mrs|Prof)\.?\s+/i, "").split(" ")[0];
@@ -31,7 +30,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHead
-        eyebrow={`${ws.headline} · ${semesterLabel(period.semester)} · AY ${period.academic_year ?? ""}`}
+        eyebrow={`${ws.headline} · ${semesterLabel(scope.semester)} · AY ${scope.academic_year ?? ""}`}
         title={`Welcome back, ${first}.`}
         description={question}
         actions={<>

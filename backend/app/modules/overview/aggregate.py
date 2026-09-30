@@ -27,7 +27,7 @@ from typing import Any
 
 from app.modules.analytics.core.distribution import bin_percentages
 from app.modules.analytics.core.outputs import DataCoverage
-from app.modules.analytics.core.results import Measure
+from app.modules.analytics.core.results import Measure, Unit, measure
 from app.modules.analytics.core.statistics import (
     completion_percent,
     mean_percent,
@@ -72,6 +72,36 @@ class OfferingMeta:
 class Item:
     meta: OfferingMeta
     data: dict[str, Any]
+    # Decimal views of the stored numbers, built once: one class appears in many groups
+    # (its course, its section, its faculty...) and converting per group dominated the cost.
+    _scores: list[Decimal] | None = field(default=None, repr=False, compare=False)
+    _pcts: dict[str, list[Decimal]] | None = field(default=None, repr=False, compare=False)
+    _sums: dict[str, Decimal] | None = field(default=None, repr=False, compare=False)
+
+    def scores(self) -> list[Decimal]:
+        """Course scores of the students who have one."""
+        if self._scores is None:
+            self._scores = [
+                Decimal(str(s["score"])) for s in self.data["students"] if s["score"] is not None
+            ]
+        return self._scores
+
+    def percentages(self, key: str) -> list[Decimal]:
+        """Assessed percentages of one assessment (absent/exempt/missing are not in it)."""
+        if self._pcts is None:
+            self._pcts = {
+                a["key"]: [Decimal(str(p)) for p in a["percentages"]]
+                for a in self.data["assessments"]
+            }
+        return self._pcts.get(key, [])
+
+    def percentage_sum(self, key: str) -> Decimal:
+        """Exact sum of ``percentages(key)``; pooled means only need sums and counts."""
+        if self._sums is None:
+            self._sums = {}
+        if key not in self._sums:
+            self._sums[key] = sum(self.percentages(key), Decimal(0))
+        return self._sums[key]
 
 
 @dataclass
@@ -119,9 +149,7 @@ def pooled_kpis(items: Sequence[Item], *, light: bool = False) -> dict[str, Any]
         data = item.data
         pool.cohort += data["cohort_n"]
         pool.passed += data["passed"]
-        pool.scores.extend(
-            Decimal(str(s["score"])) for s in data["students"] if s["score"] is not None
-        )
+        pool.scores.extend(item.scores())
         pool.coverage.update(data["coverage"])
         rules.update(data["rules"])
         severities.update(data["severities"])
@@ -190,6 +218,8 @@ def assessment_trend(items: Sequence[Item], *, light: bool = False) -> list[dict
                     "name": a["name"],
                     "sequence": a["sequence_no"],
                     "pcts": [],
+                    "total": Decimal(0),
+                    "n": 0,
                     "passed": 0,
                     "coverage": Counter(),
                     "offerings": 0,
@@ -197,7 +227,11 @@ def assessment_trend(items: Sequence[Item], *, light: bool = False) -> list[dict
                 },
             )
             bucket["sequence"] = min(bucket["sequence"], a["sequence_no"])
-            bucket["pcts"].extend(Decimal(str(p)) for p in a["percentages"])
+            if light:  # only the mean is needed: exact Decimal sums and counts pool the same
+                bucket["total"] += item.percentage_sum(a["key"])
+                bucket["n"] += len(a["percentages"])
+            else:
+                bucket["pcts"].extend(item.percentages(a["key"]))
             bucket["passed"] += a["passed"]
             bucket["coverage"].update(a["coverage"])
             bucket["offerings"] += 1
@@ -206,8 +240,17 @@ def assessment_trend(items: Sequence[Item], *, light: bool = False) -> list[dict
     out = []
     previous = None
     for bucket in ordered:
-        mean = mean_percent(bucket["pcts"])
         if light:  # comparison rows and heat maps need only the mean
+            mean = (
+                measure(
+                    quantize_percent(bucket["total"] / Decimal(bucket["n"])),
+                    unit=Unit.PERCENT,
+                    n=bucket["n"],
+                    minimum_n=1,
+                )
+                if bucket["n"]
+                else mean_percent([])
+            )
             entry = {"key": bucket["key"], "name": bucket["name"], "mean": _m(mean), "change": None}
             if (
                 previous is not None
@@ -218,6 +261,7 @@ def assessment_trend(items: Sequence[Item], *, light: bool = False) -> list[dict
             out.append(entry)
             previous = entry
             continue
+        mean = mean_percent(bucket["pcts"])
         entry = {
             "key": bucket["key"],
             "name": bucket["name"],

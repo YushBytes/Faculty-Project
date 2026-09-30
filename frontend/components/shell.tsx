@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Activity, BarChart3, BookOpen, Building2, ClipboardList, FileBarChart, GraduationCap, Layers, LayoutDashboard,
@@ -47,10 +47,16 @@ function navFor(role: Role, caps: Record<string, boolean>): { label: string; ite
 }
 
 export function PeriodSelect() {
-  const { workspace, period, setPeriod } = useSession();
+  const { workspace, period: saved, setPeriod } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const params = useSearchParams();
   if (!workspace) return null;
+  // A link can pin a period (?year=&sem=); show the one the page is actually using.
+  const period = {
+    academic_year: params.get("year") ?? saved.academic_year,
+    semester: (params.get("sem") as SemesterPeriod | null) ?? saved.semester,
+  };
   const update = (next: { academic_year: string | null; semester: SemesterPeriod }) => {
     setPeriod(next);
     const url = new URL(window.location.href);

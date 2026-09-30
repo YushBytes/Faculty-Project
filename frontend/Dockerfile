@@ -3,7 +3,7 @@
 FROM node:22-alpine AS build
 WORKDIR /web
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --fetch-retries=6 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build

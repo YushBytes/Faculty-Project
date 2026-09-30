@@ -25,7 +25,19 @@ let refreshing: Promise<string | null> | null = null;
 let onSessionLost: (() => void) | null = null;
 
 export function setAccessToken(token: string | null) {
+  clearCache();
   accessToken = token;
+}
+
+/**
+ * Short-lived cache of GET responses, so moving between pages does not recompute the same
+ * scope again. Any write through this client clears it, so your own changes always show at
+ * once; changes made elsewhere appear within CACHE_MS.
+ */
+const CACHE_MS = 30_000;
+const cache = new Map<string, { at: number; value: Promise<unknown> }>();
+export function clearCache() {
+  cache.clear();
 }
 export function onUnauthenticated(handler: () => void) {
   onSessionLost = handler;
@@ -37,6 +49,7 @@ export async function refreshSession(): Promise<string | null> {
       .then(async (r) => (r.status === 200 ? ((await r.json()).access_token as string) : null))
       .catch(() => null)
       .then((token) => {
+        if (!token) clearCache(); // the session is gone; nothing cached belongs to anyone now
         accessToken = token;
         return token;
       })
@@ -97,11 +110,30 @@ async function send(path: string, options: Options, retry = true): Promise<Respo
   return response;
 }
 
-export async function api<T>(path: string, options: Options = {}): Promise<T> {
+async function request<T>(path: string, options: Options): Promise<T> {
   const response = await send(path, options);
   if (!response.ok) throw await toError(response);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+export async function api<T>(path: string, options: Options = {}): Promise<T> {
+  const isRead = (options.method ?? (options.body !== undefined || options.form ? "POST" : "GET")) === "GET";
+  if (!isRead) {
+    clearCache();
+    try {
+      return await request<T>(path, options);
+    } finally {
+      clearCache(); // also drop anything fetched while the write was in flight
+    }
+  }
+  const key = withQuery(path, options.query);
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value as Promise<T>;
+  const value = request<T>(path, options);
+  cache.set(key, { at: Date.now(), value });
+  value.catch(() => cache.delete(key)); // never keep a failure
+  return value;
 }
 
 /** Download a file the backend generated (reports, templates) and save it. */
@@ -131,12 +163,14 @@ export async function sessionLogin(email: string, password: string): Promise<str
   });
   if (!response.ok) throw await toError(response);
   const token = (await response.json()).access_token as string;
+  clearCache(); // possibly a different person, with a different scope
   accessToken = token;
   return token;
 }
 
 export async function sessionLogout(): Promise<void> {
   await fetch("/api/session/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+  clearCache();
   accessToken = null;
 }
 
@@ -149,6 +183,7 @@ export function uploadWithProgress<T>(path: string, form: FormData, onProgress: 
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onerror = () => reject(new ApiError(0, "network_error", "The upload could not reach the server."));
     xhr.onload = async () => {
+      clearCache(); // an upload changes data
       if (xhr.status === 401 && retry) {
         const token = await refreshSession();
         if (token) return uploadWithProgress<T>(path, form, onProgress, false).then(resolve, reject);

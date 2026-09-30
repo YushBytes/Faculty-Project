@@ -442,7 +442,7 @@ def _net_change(target: OutcomeGroup, peers: OutcomeGroup, thresholds: Threshold
                 unit=Unit.PERCENTAGE_POINTS,
                 n=group.n,
                 minimum_n=minimum,
-                reason=f"no change for the {group.name} group: {group.change.reason}",
+                reason=f"change not measurable for the {group.name} group: {group.change.reason}",
             )
     return measure(
         quantize_percent((target.change.value or Decimal(0)) - (peers.change.value or Decimal(0))),

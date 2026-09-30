@@ -55,6 +55,14 @@ class AuthService:
             raise AuthenticationError(INVALID_REFRESH)
 
         if current.revoked_at is not None:
+            if self._is_concurrent_rotation(current, now):
+                # Two tabs (or a reload) refreshed with the same cookie at the same moment.
+                # The loser gets its own token in the same, still-live session.
+                user = self._users.get(current.user_id)
+                if user is not None and user.is_active:
+                    pair = self._issue(user, family_id=current.family_id, now=now)[0]
+                    self._session.commit()
+                    return pair
             # A rotated/revoked token was replayed: assume theft, kill the whole session.
             self._tokens.revoke_family(current.family_id, now)
             self._session.commit()
@@ -74,6 +82,19 @@ class AuthService:
         current.replaced_by_id = new_token.id
         self._session.commit()
         return pair
+
+    def _is_concurrent_rotation(self, token: RefreshToken, now: datetime) -> bool:
+        """A token rotated moments ago, in a session that is still live, is a benign race
+        between concurrent refreshes rather than a replay. Logged-out or killed sessions
+        (no live token left) and anything older than the grace window stay a replay."""
+        grace = get_settings().refresh_reuse_grace_seconds
+        return (
+            grace > 0
+            and token.replaced_by_id is not None
+            and token.revoked_at is not None
+            and now - token.revoked_at <= timedelta(seconds=grace)
+            and self._tokens.family_is_live(token.family_id)
+        )
 
     def logout(self, refresh_token: str) -> None:
         """Revoke the session this refresh token belongs to. Idempotent; never reveals

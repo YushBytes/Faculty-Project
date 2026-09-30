@@ -417,7 +417,9 @@ def seed_srm(
     titles = ("Assistant Professor", "Assistant Professor (Sr. G)", "Associate Professor")
     for i in range(100):
         while True:
-            title = rng.choice(("Dr. ", "Dr. ", "Mr. ", "Ms. "))
+            # Half hold a doctorate. No Mr./Ms.: the generator cannot know anyone's gender
+            # and a random honorific would contradict the first name.
+            title = "Dr. " if rng.random() < 0.5 else ""
             name = f"{title}{rng.choice(FIRST)} {rng.choice(LAST)}"
             if name not in used_names:
                 used_names.add(name)

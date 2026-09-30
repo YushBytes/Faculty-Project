@@ -34,3 +34,10 @@ class RefreshTokenRepository:
             .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
+
+    def family_is_live(self, family_id: uuid.UUID) -> bool:
+        """True while the session has an unrevoked token (it was not logged out or killed)."""
+        query = select(RefreshToken.id).where(
+            RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None)
+        )
+        return self._session.scalar(query.limit(1)) is not None
