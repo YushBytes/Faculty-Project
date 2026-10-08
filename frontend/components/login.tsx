@@ -10,12 +10,14 @@ import { ApiError } from "@/lib/api/http";
 import type { Workspace } from "@/lib/api/types";
 import { ROLE_LABEL, initials } from "@/lib/format";
 
-/** The sign-in accounts an empty platform starts with (see backend/app/bootstrap.py). Faculty
- * accounts are created from the TLP reports as <staff id>@srmist.edu.in. */
+/** The sign-in accounts an empty platform starts with (see backend/app/bootstrap.py), then the
+ * Course Coordinator the demo seed appoints (backend/app/demo/srm.py). Faculty accounts are
+ * created from the TLP reports as <staff id>@srmist.edu.in. */
 const DEMO = [
   ["admin@acadlytics.dev", "Administrator"],
   ["hod.cse@acadlytics.dev", "Head of Department · CSE"],
   ["academic.head@acadlytics.dev", "Academic Head · CSE"],
+  ["coord.dsa@acadlytics.dev", "Course Coordinator · DSA"],
 ];
 const STEPS = ["Verifying your account", "Resolving your academic scope", "Loading the current semester", "Preparing your workspace"];
 
@@ -108,7 +110,7 @@ export function LoginView() {
             {DEMO.map(([address, label]) => (
               <div className="acc" key={address}><span><b>{label}</b><br /><span className="muted">{address}</span></span><button type="button" onClick={() => { setEmail(address); setPassword(""); }}>Use</button></div>
             ))}
-            <div className="acc"><span className="muted">Faculty sign in with <b>staff id</b>@srmist.edu.in once a TLP report naming them is uploaded. Initial passwords are in the project README.</span></div>
+            <div className="acc"><span className="muted">Course Coordinators exist once they are appointed in <b>Team &amp; roles</b>, or from the demo seed. Faculty sign in with <b>staff id</b>@srmist.edu.in once a TLP report naming them is uploaded. Initial passwords are in the project README.</span></div>
           </details>
         </div>
       </section>
