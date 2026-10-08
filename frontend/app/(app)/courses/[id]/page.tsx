@@ -8,7 +8,7 @@ import { useScope, useWorkspace } from "@/lib/auth/session";
 import { ScopePage } from "@/components/scope-page";
 import { OverviewDashboard, periodQuery } from "@/components/overview";
 import { Badge, BarCell, Card, DataTable, Delta, Tabs } from "@/components/ui";
-import { Heatmap, RankBars, Sparkline, TrendChart } from "@/components/charts";
+import { MatrixLines, RankBars, Sparkline, TrendChart } from "@/components/charts";
 import { CoordinatorDrawer } from "@/components/assign";
 import { Sections } from "@/components/sections-table";
 import { num, pctOf } from "@/lib/format";
@@ -70,7 +70,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                     </Link>))}
                   </div>
                 </Card>
-                <Card title="Section × assessment" className="section" subtitle="Mean %"><Heatmap columns={o.heatmap.columns} rows={o.heatmap.rows} href={(sid) => `/sections/${sid}${periodQuery(scope)}`} max={120} /></Card>
+                <Card title="Section trend across assessments" className="section" subtitle="Mean % per assessment"><MatrixLines columns={o.assessment_matrix.columns} rows={o.assessment_matrix.rows} /></Card>
               </div>
             )}
           </>

@@ -18,7 +18,7 @@ import { useApi } from "@/lib/hooks/use-api";
 import { useWorkspace } from "@/lib/auth/session";
 import { RULES, SEGMENTS, dateTime, num, pct, pctOf } from "@/lib/format";
 import { Badge, BarCell, Card, DataTable, Delta, Empty, ErrorState, Kpi, LoadingDashboard, MeasureValue, Tabs } from "@/components/ui";
-import { GroupedBars, Heatmap, Histogram, MultiTrend, PassDonut, RankBars, RuleBars, Sparkline, TrendChart } from "@/components/charts";
+import { GroupedBars, Histogram, MatrixLines, MultiTrend, PassDonut, RankBars, RuleBars, Sparkline, TrendChart } from "@/components/charts";
 
 export type Variant = "institution" | "department" | "portfolio" | "coordinator" | "course" | "faculty" | "section" | "class" | "teacher";
 
@@ -97,8 +97,8 @@ function OverviewBody({ data, variant, filters }: { data: Overview; variant: Var
           <Comparisons data={data} variant={variant} q={q} />
 
           <div className="grid g-main section">
-            <Card title={data.heatmap_rows === "sections" ? "Section × assessment heat map" : "Course × assessment heat map"} subtitle="Mean % — spot the section or paper that moved">
-              <Heatmap columns={data.heatmap.columns} rows={data.heatmap.rows} href={(id) => (data.heatmap_rows === "sections" ? `/sections/${id}${q}` : `/courses/${id}${q}`)} />
+            <Card title={data.matrix_rows === "sections" ? "Section trend across assessments" : "Course trend across assessments"} subtitle="Mean % per assessment — spot the section or paper that moved">
+              <MatrixLines columns={data.assessment_matrix.columns} rows={data.assessment_matrix.rows} />
             </Card>
             <Card title="Attention by rule" subtitle={`${num(k.flagged_students)} students with at least one flag · deterministic rules, not predictions`} actions={<Link className="btn btn-sm" href={`/attention${q}`}>Open</Link>}>
               {Object.keys(k.rules).length ? <RuleBars counts={k.rules} names={RULES} /> : <Empty title="No attention flags" />}
@@ -135,7 +135,7 @@ function Movements({ data, q }: { data: Overview; q: string }) {
               <Sparkline values={c.trend.map((t) => t.mean)} />
               <div style={{ textAlign: "right", minWidth: 110 }}>
                 <b className="tabular">{last ? `${last.name} ${last.mean?.toFixed(1)}%` : "—"}</b>
-                <div>{last && prev ? <Delta v={Number(((last.mean ?? 0) - (prev.mean ?? 0)).toFixed(2))} /> : <span className="muted" style={{ fontSize: 12.5 }}>first assessment</span>}</div>
+                <div>{last && prev ? <Delta v={Number(((last.mean ?? 0) - (prev.mean ?? 0)).toFixed(2))} /> : <span className="muted" style={{ fontSize: 13.5 }}>first assessment</span>}</div>
               </div>
             </div>
           );
@@ -152,7 +152,7 @@ function Movements({ data, q }: { data: Overview; q: string }) {
             <small>{t.offerings} class{t.offerings === 1 ? "" : "es"} · pass {pctOf(t.pass_percent)} · completion {pctOf(t.completion_percent)}</small>
           </div>
           <b className="tabular" style={{ fontSize: 17 }}>{pctOf(t.mean)}</b>
-          <div style={{ minWidth: 86, textAlign: "right" }}>{t.change === null ? <span className="muted" style={{ fontSize: 12.5 }}>first</span> : <Delta v={t.change} />}</div>
+          <div style={{ minWidth: 86, textAlign: "right" }}>{t.change === null ? <span className="muted" style={{ fontSize: 13.5 }}>first</span> : <Delta v={t.change} />}</div>
         </div>
       ))}
     </div>
@@ -202,7 +202,7 @@ function Comparisons({ data, variant, q }: { data: Overview; variant: Variant; q
           <CompareTable rows={rows} kind={current} href={hrefFor} />
         </div>
       )}
-      {current === "faculty" && <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>Faculty figures are the results of the classes each person teaches (a co-taught class counts for each teacher). They describe student results, not teaching quality.</p>}
+      {current === "faculty" && <p className="muted" style={{ fontSize: 13.5, marginTop: 10 }}>Faculty figures are the results of the classes each person teaches (a co-taught class counts for each teacher). They describe student results, not teaching quality.</p>}
     </section>
   );
 }

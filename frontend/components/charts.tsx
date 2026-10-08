@@ -14,6 +14,9 @@ const AXIS = { stroke: "#cfd6e0", tickLine: false, axisLine: false } as const;
 
 type TipProps = { active?: boolean; payload?: { name?: string; value?: number | null; color?: string; payload?: Record<string, unknown> }[]; label?: string | number };
 
+/** Percentages read better to one decimal; student counts are whole numbers. */
+const fmt = (v: number, unit: string) => (unit === "%" ? v.toFixed(1) : String(v));
+
 function Tip({ active, payload, label, title, unit = "%" }: TipProps & { title?: (p: Record<string, unknown>) => string; unit?: string }) {
   if (!active || !payload?.length) return null;
   const head = title ? title(payload[0].payload ?? {}) : String(label ?? "");
@@ -23,7 +26,7 @@ function Tip({ active, payload, label, title, unit = "%" }: TipProps & { title?:
       {payload.map((p) => (
         <div className="row" key={p.name}>
           <span style={{ color: p.color }}>{p.name}</span>
-          <strong>{p.value === null || p.value === undefined ? "—" : `${Number(p.value).toFixed(1)}${unit}`}</strong>
+          <strong>{p.value === null || p.value === undefined ? "—" : `${fmt(Number(p.value), unit)}${unit}`}</strong>
         </div>
       ))}
     </div>
@@ -44,14 +47,14 @@ export function TrendChart({ points, onSelect, height = 300 }: { points: TrendPo
             </linearGradient>
           </defs>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 12.5 }} />
-          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 12.5 }} tickFormatter={(v) => `${v}%`} width={48} />
+          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 13.5 }} />
+          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 13.5 }} tickFormatter={(v) => `${v}%`} width={48} />
           <Tooltip content={<Tip />} cursor={{ stroke: "#cfd6e0" }} />
           <Area type="monotone" dataKey="mean" name="Mean" stroke="#0d7a69" strokeWidth={2.6} fill="url(#meanFill)" dot={{ r: 4.5, fill: "#fff", strokeWidth: 2.4 }} activeDot={{ r: 6.5, cursor: onSelect ? "pointer" : undefined }}>
-            <LabelList dataKey="mean" position="top" formatter={(v) => (typeof v === "number" ? `${v.toFixed(1)}` : "")} style={{ fontSize: 12, fontWeight: 700, fill: "#0e1a2b" }} />
+            <LabelList dataKey="mean" position="top" formatter={(v) => (typeof v === "number" ? `${v.toFixed(1)}` : "")} style={{ fontSize: 13, fontWeight: 700, fill: "#0e1a2b" }} />
           </Area>
           <Line type="monotone" dataKey="pass" name="Pass %" stroke="#2459d6" strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
-          <Legend verticalAlign="bottom" height={28} iconType="plainline" wrapperStyle={{ fontSize: 13 }} />
+          <Legend verticalAlign="bottom" height={28} iconType="plainline" wrapperStyle={{ fontSize: 13.5 }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -71,14 +74,14 @@ export function MultiTrend({ series, height = 300 }: { series: { course_id: stri
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 12, right: 16, left: -6, bottom: 0 }}>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="position" {...AXIS} tick={{ fontSize: 12.5 }} />
-          <YAxis domain={[30, 90]} {...AXIS} tick={{ fontSize: 12.5 }} tickFormatter={(v) => `${v}%`} width={48} />
+          <XAxis dataKey="position" {...AXIS} tick={{ fontSize: 13.5 }} />
+          <YAxis domain={[30, 90]} {...AXIS} tick={{ fontSize: 13.5 }} tickFormatter={(v) => `${v}%`} width={48} />
           <Tooltip content={({ active, payload }) => active && payload?.length ? (
             <div className="chart-tip"><b>Assessment {String(payload[0].payload.position)}</b>
               {payload.map((p) => <div className="row" key={String(p.dataKey)}><span style={{ color: p.color }}>{String(p.dataKey)} · {String(p.payload[`${String(p.dataKey)}__name`] ?? "")}</span><strong>{p.value === null ? "—" : `${Number(p.value).toFixed(1)}%`}</strong></div>)}
             </div>) : null} />
           {series.map((s, i) => <Line key={s.course_id} type="monotone" dataKey={s.course_code} stroke={SERIES[i % SERIES.length]} strokeWidth={2.4} dot={{ r: 3.5 }} connectNulls />)}
-          <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 13 }} />
+          <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 13.5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -93,12 +96,12 @@ export function Histogram({ bins, height = 260, label = "Students" }: { bins: { 
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 20, right: 8, left: -12, bottom: 0 }}>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="range" {...AXIS} tick={{ fontSize: 12 }} />
-          <YAxis {...AXIS} tick={{ fontSize: 12 }} allowDecimals={false} width={56} />
+          <XAxis dataKey="range" {...AXIS} tick={{ fontSize: 13 }} />
+          <YAxis {...AXIS} tick={{ fontSize: 13 }} allowDecimals={false} width={56} />
           <Tooltip content={<Tip unit="" title={(p) => `${p.range}%`} />} cursor={{ fill: "#f2f4f7" }} />
           <Bar dataKey="count" name={label} radius={[6, 6, 0, 0]}>
             {data.map((d) => <Cell key={d.range} fill={scaleColor(d.mid)} stroke="rgba(14,26,43,.08)" />)}
-            <LabelList dataKey="count" position="top" style={{ fontSize: 11.5, fontWeight: 700, fill: "#3a475a" }} />
+            <LabelList dataKey="count" position="top" style={{ fontSize: 12.5, fontWeight: 700, fill: "#3a475a" }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -127,7 +130,7 @@ export function PassDonut({ passed, failed, notScored, height = 240 }: { passed:
       <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none", textAlign: "center" }}>
         <div>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 800, color: "var(--ink)" }}>{total ? pct((passed * 100) / total) : "—"}</div>
-          <div className="muted" style={{ fontSize: 12.5 }}>pass rate</div>
+          <div className="muted" style={{ fontSize: 13.5 }}>pass rate</div>
         </div>
       </div>
     </div>
@@ -146,7 +149,7 @@ export function RankBars({ rows, href, height, metric = "average" }: { rows: Com
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 46, left: 8, bottom: 4 }}>
           <CartesianGrid stroke="#eef1f5" horizontal={false} />
-          <XAxis type="number" domain={[0, 100]} {...AXIS} tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
+          <XAxis type="number" domain={[0, 100]} {...AXIS} tick={{ fontSize: 13 }} tickFormatter={(v) => `${v}%`} />
           <YAxis type="category" dataKey="label" width={150} {...AXIS} tick={({ x, y, payload }) => {
             const item = data.find((d) => d.label === payload.value);
             const text = String(payload.value).length > 22 ? `${String(payload.value).slice(0, 21)}…` : String(payload.value);
@@ -159,7 +162,7 @@ export function RankBars({ rows, href, height, metric = "average" }: { rows: Com
           <Tooltip content={<Tip title={(p) => String(p.label)} />} cursor={{ fill: "#f2f4f7" }} />
           <Bar dataKey="v" name={metric === "average" ? "Average" : "Pass %"} radius={[0, 6, 6, 0]} barSize={16}>
             {data.map((d) => <Cell key={d.id} fill={scaleColor(d.v)} />)}
-            <LabelList dataKey="v" position="right" formatter={(v) => (typeof v === "number" ? `${v.toFixed(1)}%` : "")} style={{ fontSize: 12, fontWeight: 700, fill: "#1d2939" }} />
+            <LabelList dataKey="v" position="right" formatter={(v) => (typeof v === "number" ? `${v.toFixed(1)}%` : "")} style={{ fontSize: 13, fontWeight: 700, fill: "#1d2939" }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -171,7 +174,7 @@ export function RankBars({ rows, href, height, metric = "average" }: { rows: Com
 export function Sparkline({ values, width = 110, height = 30 }: { values: (number | null)[]; width?: number; height?: number }) {
   const pts = values.map((v, i) => ({ i, v }));
   const valid = values.filter((v): v is number => v !== null);
-  if (valid.length < 2) return <span className="muted" style={{ fontSize: 12.5 }}>—</span>;
+  if (valid.length < 2) return <span className="muted" style={{ fontSize: 13.5 }}>—</span>;
   const up = valid[valid.length - 1] >= valid[0];
   return (
     <div style={{ width, height }}>
@@ -193,55 +196,121 @@ export function StudentLine({ points, passMark, classMeans, height = 260 }: { po
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 22, right: 18, left: -6, bottom: 0 }}>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 12.5 }} />
-          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 12.5 }} tickFormatter={(v) => `${v}%`} width={48} />
-          <ReferenceLine y={passMark} stroke="#c2352a" strokeDasharray="4 4" label={{ value: `Pass ${passMark}%`, position: "insideTopRight", fontSize: 12, fill: "#c2352a" }} />
+          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 13.5 }} />
+          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 13.5 }} tickFormatter={(v) => `${v}%`} width={48} />
+          <ReferenceLine y={passMark} stroke="#c2352a" strokeDasharray="4 4" label={{ value: `Pass ${passMark}%`, position: "insideTopRight", fontSize: 13, fill: "#c2352a" }} />
           <Tooltip content={<Tip />} />
           {classMeans && <Line type="monotone" dataKey="cls" name="Class mean" stroke="#8894a6" strokeDasharray="5 4" strokeWidth={1.8} dot={false} connectNulls />}
           <Line type="monotone" dataKey="pct" name="Student" stroke="#0b3b66" strokeWidth={2.8} dot={{ r: 5, fill: "#fff", strokeWidth: 2.4 }} connectNulls={false}>
-            <LabelList dataKey="pct" position="top" formatter={(v) => (typeof v === "number" ? v.toFixed(0) : "")} style={{ fontSize: 12, fontWeight: 700, fill: "#0e1a2b" }} />
+            <LabelList dataKey="pct" position="top" formatter={(v) => (typeof v === "number" ? v.toFixed(0) : "")} style={{ fontSize: 13, fontWeight: 700, fill: "#0e1a2b" }} />
           </Line>
-          <Legend verticalAlign="bottom" height={26} wrapperStyle={{ fontSize: 13 }} />
+          <Legend verticalAlign="bottom" height={26} wrapperStyle={{ fontSize: 13.5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-/** Rows x assessment columns, coloured by mean %. */
-export function Heatmap({ columns, rows, href, max = 60 }: { columns: { key: string; name: string }[]; rows: { id: string; label: string; values: Record<string, number | null> }[]; href?: (id: string) => string; max?: number }) {
+/**
+ * Section (or course) x assessment, one line per row, over the API's assessment matrix.
+ * Many rows would be unreadable as lines, so the highest and lowest few by the last
+ * assessment are plotted and the rest stay in the comparison table.
+ */
+export function MatrixLines({ columns, rows, maxSeries = 8, height = 330 }: { columns: { key: string; name: string }[]; rows: { id: string; label: string; values: Record<string, number | null> }[]; maxSeries?: number; height?: number }) {
   if (!rows.length || !columns.length) return null;
-  const shown = rows.slice(0, max);
+  const latest = (r: { values: Record<string, number | null> }) => {
+    for (let i = columns.length - 1; i >= 0; i -= 1) {
+      const v = r.values[columns[i].key];
+      if (v !== null && v !== undefined) return v;
+    }
+    return null;
+  };
+  // Rank only rows that have a mark to plot; a row with none would draw an empty line.
+  const ranked = rows.filter((r) => latest(r) !== null).sort((a, b) => (latest(b) ?? 0) - (latest(a) ?? 0));
+  if (!ranked.length) return null;
+  let shown = ranked;
+  let note: string | null = null;
+  if (ranked.length > maxSeries) {
+    // Gate on ranked, not rows: splitting a shorter list would overlap and plot a row twice.
+    const topN = Math.ceil(maxSeries / 2);
+    const top = ranked.slice(0, topN);
+    const bottom = ranked.slice(ranked.length - (maxSeries - topN));
+    shown = [...top, ...bottom];
+    note = `Showing the ${top.length} highest and ${bottom.length} lowest of ${ranked.length} by ${columns[columns.length - 1].name}. The comparison table below lists them all.`;
+  } else if (ranked.length < rows.length) {
+    note = `${rows.length - ranked.length} of ${rows.length} have no marks recorded yet and are not plotted.`;
+  }
+  // A series is addressed by its name, so two rows sharing a label would collapse into one
+  // line. Rows are distinct by id, so number the repeats instead of losing one.
+  const seen = new Map<string, number>();
+  const series = shown.map((r) => {
+    const n = (seen.get(r.label) ?? 0) + 1;
+    seen.set(r.label, n);
+    return { id: r.id, name: n === 1 ? r.label : `${r.label} (${n})`, values: r.values };
+  });
+  const data = columns.map((c) => {
+    const row: Record<string, number | string | null> = { name: c.name };
+    series.forEach((s) => { row[s.name] = s.values[c.key] ?? null; });
+    return row;
+  });
   return (
     <div>
-      <div className="heatmap" style={{ gridTemplateColumns: `minmax(90px, 160px) repeat(${columns.length}, minmax(56px, 1fr))` }}>
-        <div />
-        {columns.map((c) => <div className="hm-head" key={c.key} title={c.name}>{c.name}</div>)}
-        {shown.map((r) => (
-          <HeatRow key={r.id} row={r} columns={columns} href={href} />
-        ))}
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 12, right: 16, left: -6, bottom: 0 }}>
+            <CartesianGrid stroke="#eef1f5" vertical={false} />
+            <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 13.5 }} />
+            <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 13.5 }} tickFormatter={(v) => `${v}%`} width={48} />
+            <Tooltip content={<Tip />} />
+            {series.map((s, i) => <Line key={s.id} type="monotone" dataKey={s.name} stroke={SERIES[i % SERIES.length]} strokeWidth={2.2} dot={{ r: 3 }} connectNulls />)}
+            <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 13.5 }} />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
-      {rows.length > max && <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Showing {max} of {rows.length}. Open the comparison table for all.</p>}
-      <HeatScale />
+      {note && <p className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>{note}</p>}
     </div>
   );
 }
 
-function HeatRow({ row, columns, href }: { row: { id: string; label: string; values: Record<string, number | null> }; columns: { key: string; name: string }[]; href?: (id: string) => string }) {
+/** Attention flags per row (section or course), stacked by rule, over the API's attention matrix. */
+export function StackedRuleBars({ rules, rows, names, maxRows = 12, height = 330 }: { rules: string[]; rows: { id: string; label: string; values: Record<string, number> }[]; names: Record<string, { short: string; name?: string }>; maxRows?: number; height?: number }) {
+  if (!rules.length || !rows.length) return null;
+  const total = (r: { values: Record<string, number> }) => rules.reduce((sum, k) => sum + (r.values[k] ?? 0), 0);
+  const ranked = [...rows].sort((a, b) => total(b) - total(a));
+  const shown = ranked.slice(0, maxRows);
+  const data = shown.map((r) => {
+    const row: Record<string, number | string> = { label: r.label };
+    rules.forEach((k) => { row[names[k]?.short ?? k] = r.values[k] ?? 0; });
+    return row;
+  });
   return (
-    <>
-      <div className="hm-row" title={row.label}>{href ? <Link href={href(row.id)}>{row.label}</Link> : row.label}</div>
-      {columns.map((c) => {
-        const v = row.values[c.key];
-        return <div className="hm-cell" key={c.key} style={{ background: scaleColor(v) }} title={`${row.label} · ${c.name}: ${v === null || v === undefined ? "no data" : `${v.toFixed(1)}%`}`}>{v === null || v === undefined ? "" : v.toFixed(0)}</div>;
-      })}
-    </>
+    <div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 16, right: 8, left: -12, bottom: 0 }}>
+            <CartesianGrid stroke="#eef1f5" vertical={false} />
+            <XAxis dataKey="label" {...AXIS} tick={{ fontSize: 12.5 }} interval={0} angle={-28} textAnchor="end" height={62} />
+            <YAxis {...AXIS} tick={{ fontSize: 13 }} allowDecimals={false} width={56} />
+            <Tooltip content={<Tip unit="" />} cursor={{ fill: "#f2f4f7" }} />
+            {rules.map((k, i) => <Bar key={k} dataKey={names[k]?.short ?? k} stackId="flags" fill={SERIES[i % SERIES.length]} radius={i === rules.length - 1 ? [5, 5, 0, 0] : undefined} />)}
+            <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 13.5 }} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {rows.length > maxRows && <p className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>Showing the {maxRows} with the most flags, of {rows.length}.</p>}
+    </div>
   );
 }
 
-export function HeatScale() {
-  const steps = [["<45", "var(--heat-1)"], ["45", "var(--heat-2)"], ["55", "var(--heat-3)"], ["62", "var(--heat-4)"], ["70", "var(--heat-5)"], ["78+", "var(--heat-6)"]];
-  return <div className="heat-scale" style={{ marginTop: 12 }}>Mean %{steps.map(([l, c]) => <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><i style={{ background: c }} />{l}</span>)}</div>;
+/** Key for the performance-scale colours used by the distribution chart, rank bars and the section map. */
+export function ScaleLegend({ label = "Mean %" }: { label?: string }) {
+  const steps: [string, string][] = [["<45", "var(--scale-1)"], ["45", "var(--scale-2)"], ["55", "var(--scale-3)"], ["62", "var(--scale-4)"], ["70", "var(--scale-5)"], ["78+", "var(--scale-6)"]];
+  return (
+    <div className="scale-legend" style={{ marginTop: 12 }}>
+      {label}
+      {steps.map(([l, c]) => <span key={l}><i style={{ background: c }} />{l}</span>)}
+    </div>
+  );
 }
 
 /** Counts per attention rule, as bars. */
@@ -252,11 +321,11 @@ export function RuleBars({ counts, names, height = 240 }: { counts: Record<strin
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 20, right: 8, left: -12, bottom: 0 }}>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 11.5 }} interval={0} angle={-28} textAnchor="end" height={62} />
-          <YAxis {...AXIS} tick={{ fontSize: 12 }} allowDecimals={false} width={56} />
+          <XAxis dataKey="name" {...AXIS} tick={{ fontSize: 12.5 }} interval={0} angle={-28} textAnchor="end" height={62} />
+          <YAxis {...AXIS} tick={{ fontSize: 13 }} allowDecimals={false} width={56} />
           <Tooltip content={<Tip unit="" title={(p) => String(p.name)} />} cursor={{ fill: "#f2f4f7" }} />
           <Bar dataKey="count" name="Students" radius={[6, 6, 0, 0]} fill="#b86e00">
-            <LabelList dataKey="count" position="top" style={{ fontSize: 11.5, fontWeight: 700, fill: "#3a475a" }} />
+            <LabelList dataKey="count" position="top" style={{ fontSize: 12.5, fontWeight: 700, fill: "#3a475a" }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -272,13 +341,13 @@ export function GroupedBars({ rows, height = 260 }: { rows: CompareRow[]; height
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 8, left: -10, bottom: 0 }}>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
-          <XAxis dataKey="label" {...AXIS} tick={{ fontSize: 12.5 }} />
-          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}%`} width={48} />
+          <XAxis dataKey="label" {...AXIS} tick={{ fontSize: 13.5 }} />
+          <YAxis domain={[0, 100]} {...AXIS} tick={{ fontSize: 13 }} tickFormatter={(v) => `${v}%`} width={48} />
           <Tooltip content={<Tip />} cursor={{ fill: "#f2f4f7" }} />
           <Bar dataKey="Average" fill="#0d7a69" radius={[5, 5, 0, 0]} />
           <Bar dataKey="Pass %" fill="#2459d6" radius={[5, 5, 0, 0]} />
           <Bar dataKey="Completion" fill="#b8c2d0" radius={[5, 5, 0, 0]} />
-          <Legend verticalAlign="bottom" height={26} wrapperStyle={{ fontSize: 13 }} />
+          <Legend verticalAlign="bottom" height={26} wrapperStyle={{ fontSize: 13.5 }} />
         </BarChart>
       </ResponsiveContainer>
     </div>

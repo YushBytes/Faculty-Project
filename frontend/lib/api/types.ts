@@ -77,9 +77,9 @@ export type Overview = {
   trend: TrendPoint[];
   course_trends: { course_id: string; course_code: string; points: { key: string; name: string; mean: number | null }[] }[];
   comparisons: { courses: CompareRow[]; sections: CompareRow[]; faculty: CompareRow[]; semesters: CompareRow[]; departments: CompareRow[] };
-  heatmap: { columns: { key: string; name: string }[]; rows: { id: string; label: string; values: Record<string, number | null> }[] };
+  assessment_matrix: { columns: { key: string; name: string }[]; rows: { id: string; label: string; values: Record<string, number | null> }[] };
   attention_matrix: { rules: string[]; rows: { id: string; label: string; cohort: number; values: Record<string, number> }[] };
-  heatmap_rows: "sections" | "courses";
+  matrix_rows: "sections" | "courses";
   students: Record<"top" | "bottom" | "borderline" | "improving" | "declining" | "persistently_low", StudentEntry[]>;
   activity: {
     imports: { id: string; file_name: string; status: string; offering: string | null; offering_id: string; by: string | null; at: string; created: number | null; updated: number | null }[];

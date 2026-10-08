@@ -26,8 +26,8 @@ export default function Audit() {
           <DataTable rows={data.items} rowKey={(r) => r.id} columns={[
             { key: "when", label: "When", render: (r) => dateTime(r.created_at) },
             { key: "what", label: "Change", render: (r) => <span className="strong">{r.entity.replaceAll("_", " ")} <Badge>{r.action.replaceAll("_", " ")}</Badge></span> },
-            { key: "old", label: "Before", render: (r) => <span style={{ fontSize: 13 }}>{show(r.old_value)}</span> },
-            { key: "new", label: "After", render: (r) => <span style={{ fontSize: 13 }}>{show(r.new_value)}</span> },
+            { key: "old", label: "Before", render: (r) => <span style={{ fontSize: 13.5 }}>{show(r.old_value)}</span> },
+            { key: "new", label: "After", render: (r) => <span style={{ fontSize: 13.5 }}>{show(r.new_value)}</span> },
           ]} />
           <div className="filters" style={{ marginTop: 14, justifyContent: "flex-end" }}>
             <button className="btn btn-sm" disabled={offset === 0} onClick={() => set({ offset: String(Math.max(0, offset - 50)) })}>Previous</button>

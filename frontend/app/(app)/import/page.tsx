@@ -327,7 +327,7 @@ function ReviewDrawer({ file, onClose, onChanged }: { file: TlpFile; onClose: ()
             );
           })}
           {error && <Notice tone="error">{error}</Notice>}
-          <p className="muted" style={{ fontSize: 13 }}>Every correction is recorded in the audit log with the value that was uploaded.</p>
+          <p className="muted" style={{ fontSize: 13.5 }}>Every correction is recorded in the audit log with the value that was uploaded.</p>
         </>
       )}
     </Drawer>

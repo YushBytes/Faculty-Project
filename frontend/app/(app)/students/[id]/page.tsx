@@ -25,11 +25,10 @@ export default function StudentPage({ params }: { params: Promise<{ id: string }
     <>
       <PageHead crumbs={[{ href: "/students", label: "Students" }, { label: s.full_name }]} eyebrow={`Student · ${s.register_number}`} title={s.full_name}
         description={<>Section {s.section ?? "—"} · batch {s.batch_year}{s.email ? ` · ${s.email}` : ""}{!s.is_active && " · inactive record"}</>} />
-      <div className="kpis" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
+      <div className="kpis" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         <Kpi label="Classes you can see" value={data.classes.length} />
         <Kpi label="Average course score" tone="accent" value={scored.length ? pct(scored.reduce((a, b) => a + b, 0) / scored.length) : "—"} foot="mean of this student's course scores" />
         <Kpi label="Attention flags" tone="warn" value={flags} foot="live, across classes" />
-        <Kpi label="Attendance" value="—" foot="not recorded in ACADLYTICS yet" />
       </div>
       {data.classes.length === 0 && <Card className="section"><Empty title="No classes of this student are in your scope" /></Card>}
       {data.classes.map((c) => <ClassBlock key={c.offering_id} c={c} onIntervene={() => setIntervene(c)} />)}

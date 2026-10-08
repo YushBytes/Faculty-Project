@@ -203,7 +203,7 @@ class InsightsService:
         items, resolved, period = self.items(filters, actor=actor)
         ids = [uuid.UUID(i.meta.id) for i in items]
         single_course = len({i.meta.course_id for i in items}) == 1
-        # Rows of the heat maps: sections within one course, courses otherwise.
+        # Rows of the matrices: sections within one course, courses otherwise.
         row_key = (
             (lambda i: (i.meta.section_id, i.meta.section_name))
             if single_course
@@ -254,9 +254,9 @@ class InsightsService:
                 for c in comparisons["courses"]
             ],
             "comparisons": comparisons,
-            "heatmap": aggregate.heatmap(items, row_key),
+            "assessment_matrix": aggregate.assessment_matrix(items, row_key),
             "attention_matrix": aggregate.attention_matrix(items, row_key),
-            "heatmap_rows": "sections" if single_course else "courses",
+            "matrix_rows": "sections" if single_course else "courses",
             "students": aggregate.student_lists(items),
             "activity": self._activity(ids, actor),
         }

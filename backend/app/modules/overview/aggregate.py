@@ -240,7 +240,7 @@ def assessment_trend(items: Sequence[Item], *, light: bool = False) -> list[dict
     out = []
     previous = None
     for bucket in ordered:
-        if light:  # comparison rows and heat maps need only the mean
+        if light:  # comparison rows and the assessment matrix need only the mean
             mean = (
                 measure(
                     quantize_percent(bucket["total"] / Decimal(bucket["n"])),
@@ -340,7 +340,9 @@ def group(
     return rows
 
 
-def heatmap(items: Sequence[Item], key: Callable[[Item], tuple[str, str]]) -> dict[str, Any]:
+def assessment_matrix(
+    items: Sequence[Item], key: Callable[[Item], tuple[str, str]]
+) -> dict[str, Any]:
     """Rows (a grouping) x columns (assessment names) -> pooled mean %."""
     trend = assessment_trend(items)
     columns = [{"key": t["key"], "name": t["name"]} for t in trend]

@@ -7,7 +7,7 @@ import { Search } from "lucide-react";
 import { useScope } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
 import { Badge, BarCell, Card, DataTable, Delta, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
-import { HeatScale, Sparkline } from "@/components/charts";
+import { ScaleLegend, Sparkline } from "@/components/charts";
 import { num, pct, pctOf, scaleColor } from "@/lib/format";
 
 export default function Sections() {
@@ -38,7 +38,7 @@ export default function Sections() {
             </Link>
           ))}
         </div>
-        <HeatScale />
+        <ScaleLegend />
       </Card>
       <div className="section">
         <div className="filters"><div className="search"><Search size={16} /><input className="input" placeholder="Find a section (e.g. B4)" value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>

@@ -82,8 +82,8 @@ def test_scope_and_comparisons(client: TestClient, world, hod, admin) -> None:
     coord = overview(world["coord"])
     assert coord["counts"]["offerings"] == 2 and coord["counts"]["courses"] == 1
     assert {r["label"] for r in coord["comparisons"]["faculty"]} == {"Teacher One", "Teacher Two"}
-    assert coord["heatmap_rows"] == "sections"
-    assert [c["name"] for c in coord["heatmap"]["columns"]] == ["FT-I", "FT-II"]
+    assert coord["matrix_rows"] == "sections"
+    assert [c["name"] for c in coord["assessment_matrix"]["columns"]] == ["FT-I", "FT-II"]
     department = overview(hod)
     assert department["counts"]["offerings"] == 3 and department["counts"]["courses"] == 2
     # Section A1 pools both of its courses.

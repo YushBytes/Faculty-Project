@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Download, Eye, EyeOff, FileBarChart, HeartHandshake, Lightbulb, ListChecks, Upload, UserCog, Wand2 } from "lucide-react";
 import { assessmentsApi, insightsApi, offeringsApi } from "@/lib/api/endpoints";
@@ -70,6 +70,30 @@ function EngineInsights({ id }: { id: string }) {
   );
 }
 
+/**
+ * Header checkbox for the marks table: ticks every student, clears them, and shows the
+ * indeterminate state while only some are picked (which a checkbox can only be given
+ * through the DOM property, not an attribute).
+ */
+function SelectAll({ students, picked, setPicked }: { students: { id: string }[]; picked: Set<string>; setPicked: (next: Set<string>) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const all = students.length > 0 && picked.size === students.length;
+  const some = picked.size > 0 && !all;
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = some;
+  }, [some]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={all}
+      onChange={() => setPicked(all ? new Set() : new Set(students.map((s) => s.id)))}
+      aria-label={all ? "Clear selection" : "Select all students"}
+      title={all ? "Clear selection" : "Select all students"}
+    />
+  );
+}
+
 function Marks({ id, passMark, onIntervene }: { id: string; passMark: number; onIntervene: (ids: string[]) => void }) {
   const router = useRouter();
   const { data, error, loading, reload } = useApi(() => offeringsApi.results(id, false), [id]);
@@ -91,11 +115,17 @@ function Marks({ id, passMark, onIntervene }: { id: string; passMark: number; on
         <Badge tone="accent">{data.students.length} students</Badge>
         <Badge>{data.assessments.length} assessments</Badge>
         <span className="muted" style={{ fontSize: 13.5 }}>AB = absent, EX = exempt, — = no mark recorded (never counted as zero). Unpublished assessments are shown faded.</span>
-        {picked.size > 0 && <button className="btn btn-sm btn-primary" style={{ marginLeft: "auto" }} onClick={() => onIntervene([...picked])}><HeartHandshake size={15} /> Intervention for {picked.size}</button>}
+        {picked.size > 0 && (
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="muted" style={{ fontSize: 13.5 }}>{picked.size} selected</span>
+            <button className="btn btn-sm" onClick={() => setPicked(new Set())}>Clear</button>
+            <button className="btn btn-sm btn-primary" onClick={() => onIntervene([...picked])}><HeartHandshake size={15} /> Intervention for {picked.size}</button>
+          </div>
+        )}
       </div>
       <div className="table-wrap" style={{ maxHeight: 680, overflow: "auto" }}>
         <table className="table">
-          <thead><tr><th style={{ width: 32 }} /><th>Student</th>{data.assessments.map((a) => <th key={a.id} className="r" style={{ opacity: a.is_published ? 1 : 0.5 }}>{a.name}<span className="sub" style={{ fontWeight: 500 }}>/ {a.max_marks}</span></th>)}</tr></thead>
+          <thead><tr><th style={{ width: 32 }}><SelectAll students={data.students} picked={picked} setPicked={setPicked} /></th><th>Student</th>{data.assessments.map((a) => <th key={a.id} className="r" style={{ opacity: a.is_published ? 1 : 0.5 }}>{a.name}<span className="sub" style={{ fontWeight: 500 }}>/ {a.max_marks}</span></th>)}</tr></thead>
           <tbody>{data.students.map((s) => (
             <tr key={s.id} className="clickable" onClick={() => router.push(`/students/${s.id}`)}>
               <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${s.full_name}`} checked={picked.has(s.id)} onChange={() => setPicked((p) => { const n = new Set(p); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; })} /></td>

@@ -72,7 +72,20 @@ export function InterventionDrawer({ offeringId, label, preselect = [], onClose,
         <label className="field"><span>Date</span><input className="input" type="date" value={recordedOn} onChange={(e) => setRecordedOn(e.target.value)} /></label>
       </div>
       <div>
-        <div className="label" style={{ marginBottom: 8 }}>Students with attention flags · tick the flags that are the reason</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+          <div className="label" style={{ margin: 0 }}>Students with attention flags · tick the flags that are the reason</div>
+          {byStudent.size > 0 && (
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="muted" style={{ fontSize: 13 }}>{selected.size} selected</span>
+              <button type="button" className="btn btn-sm" onClick={() => {
+                const everyone = [...byStudent.keys()];
+                const all = everyone.every((id) => selected.has(id));
+                setSelected(all ? new Set() : new Set([...selected, ...everyone]));
+                if (all) setFlagIds(new Set());
+              }}>{[...byStudent.keys()].every((id) => selected.has(id)) ? "Clear all" : "Select all"}</button>
+            </div>
+          )}
+        </div>
         {flags.loading ? <LoadingBlock rows={4} /> : byStudent.size === 0 ? <p className="muted">No live attention flags in this class. You can still record an intervention with a note for students chosen from the Marks tab.</p> : (
           <div className="list" style={{ maxHeight: 340, overflowY: "auto" }}>
             {[...byStudent.entries()].map(([sid, s]) => (
@@ -89,7 +102,7 @@ export function InterventionDrawer({ offeringId, label, preselect = [], onClose,
             ))}
           </div>
         )}
-        {[...selected].filter((sid) => !byStudent.has(sid)).length > 0 && <p className="muted" style={{ fontSize: 13 }}>{[...selected].filter((sid) => !byStudent.has(sid)).length} student(s) chosen without a flag — add a note.</p>}
+        {[...selected].filter((sid) => !byStudent.has(sid)).length > 0 && <p className="muted" style={{ fontSize: 13.5 }}>{[...selected].filter((sid) => !byStudent.has(sid)).length} student(s) chosen without a flag — add a note.</p>}
       </div>
       <label className="field"><span>Note</span><textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What was done, and what to look for next time" /></label>
       {error && <Notice tone="error">{error}</Notice>}

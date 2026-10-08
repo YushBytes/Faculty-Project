@@ -13,7 +13,7 @@ the FastAPI backend.
 | Adapters | `lib/api/endpoints.ts`, `lib/api/types.ts` | The only place URLs and wire types appear. Pages import adapters, never `fetch`. |
 | Session | `lib/auth/session.tsx` | Restores the session, loads `/me/workspace` (role, department, courses coordinated, classes taught, terms, capabilities), holds the academic period, `useScope()` merges period + URL filters. |
 | Data | `lib/hooks/use-api.ts` | Keyed loading with stale-response dropping; every view has loading, empty, error and success states. |
-| UI kit | `components/ui.tsx`, `components/charts.tsx` | Cards, KPIs, sortable tables, drawers, states; line/area, bar, histogram, donut, ranking, heat map, sparkline charts. |
+| UI kit | `components/ui.tsx`, `components/charts.tsx` | Cards, KPIs, sortable tables, drawers, states; line/area, bar, grouped and stacked bar, histogram, donut, ranking, multi-series matrix, sparkline charts. |
 | Views | `components/overview.tsx` | The one dashboard for every level; `variant` changes emphasis, never what is counted. |
 
 ## Routes (`app/(app)/…`, all behind the session)
@@ -29,7 +29,8 @@ shareable link; the period selector sets the default for the user on that device
 ## Design
 
 Light institutional theme: off-white canvas, white surfaces, ink-navy type, one teal accent, a
-red→teal performance scale for heat maps. Body 15.5 px, tables 14.5 px, metadata ≥ 13 px. Tokens
+red→teal performance scale for section tiles, distribution and ranking bars. Body 15.5 px,
+tables 14.5 px, metadata ≥ 13 px (dense chart labels 12.5 px). Tokens
 are CSS custom properties in `app/globals.css`. Motion is subtle and disabled under
 `prefers-reduced-motion`.
 

@@ -10,7 +10,7 @@ import { useApi } from "@/lib/hooks/use-api";
 import { periodQuery, useOverview } from "@/components/overview";
 import { FilterBar } from "@/components/filter-bar";
 import { Card, DataTable, Empty, ErrorState, Kpi, LoadingBlock, PageHead, SeverityBadge } from "@/components/ui";
-import { RuleBars } from "@/components/charts";
+import { RuleBars, StackedRuleBars } from "@/components/charts";
 import { InterventionDrawer } from "@/components/intervention-drawer";
 import { RULES, date, num } from "@/lib/format";
 
@@ -39,16 +39,9 @@ export default function Attention() {
       </div>
       <div className="grid g-main-r section">
         <Card title="Flags by rule" subtitle="Students flagged by each rule">{overview.data ? <RuleBars counts={overview.data.kpis.rules} names={RULES} /> : <LoadingBlock />}</Card>
-        <Card title={`Attention heat map · ${overview.data?.heatmap_rows ?? ""}`} subtitle="Students flagged per rule">
+        <Card title={`Flags by ${overview.data?.matrix_rows === "courses" ? "course" : "section"}`} subtitle="Students flagged, stacked by rule">
           {matrix && matrix.rows.length ? (
-            <div style={{ maxHeight: 330, overflow: "auto" }}>
-              <div className="heatmap" style={{ gridTemplateColumns: `minmax(90px,150px) repeat(${matrix.rules.length}, minmax(64px,1fr))` }}>
-                <div />{matrix.rules.map((r) => <div key={r} className="hm-head" title={RULES[r]?.name}>{RULES[r]?.short}</div>)}
-                {matrix.rows.map((row) => (
-                  <Row key={row.id} label={row.label} cells={matrix.rules.map((r) => ({ r, v: row.values[r] ?? 0, share: row.cohort ? (row.values[r] ?? 0) / row.cohort : 0 }))} />
-                ))}
-              </div>
-            </div>
+            <StackedRuleBars rules={matrix.rules} rows={matrix.rows} names={RULES} />
           ) : <Empty title="No flags" />}
         </Card>
       </div>
@@ -75,15 +68,6 @@ export default function Attention() {
         </>
       )}
       {intervene && <InterventionDrawer offeringId={intervene.offering_id} label={intervene.offering} preselect={[intervene.student.id]} onClose={() => setIntervene(null)} onSaved={reload} />}
-    </>
-  );
-}
-
-function Row({ label, cells }: { label: string; cells: { r: string; v: number; share: number }[] }) {
-  return (
-    <>
-      <div className="hm-row">{label}</div>
-      {cells.map((c) => <div key={c.r} className="hm-cell" style={{ background: c.v === 0 ? "var(--heat-empty)" : `rgba(194, 53, 42, ${Math.min(0.85, 0.12 + c.share * 2.2)})`, color: c.share > 0.25 ? "#fff" : "#243248" }} title={`${label} · ${RULES[c.r]?.name}: ${c.v}`}>{c.v || ""}</div>)}
     </>
   );
 }

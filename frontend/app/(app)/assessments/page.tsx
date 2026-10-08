@@ -5,7 +5,7 @@ import { useScope } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
 import { FilterBar } from "@/components/filter-bar";
 import { Card, Delta, Empty, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
-import { Heatmap, MultiTrend, TrendChart } from "@/components/charts";
+import { MatrixLines, MultiTrend, TrendChart } from "@/components/charts";
 import { pctOf } from "@/lib/format";
 import { useRouter } from "next/navigation";
 
@@ -33,7 +33,7 @@ export default function Assessments() {
                 </Link>))}</div>
             </Card>
           </div>
-          <Card className="section" title={data.heatmap_rows === "sections" ? "Section × assessment" : "Course × assessment"} subtitle="Mean %"><Heatmap columns={data.heatmap.columns} rows={data.heatmap.rows} max={120} href={(id) => data.heatmap_rows === "sections" ? `/sections/${id}${q}` : `/courses/${id}${q}`} /></Card>
+          <Card className="section" title={data.matrix_rows === "sections" ? "Section trend across assessments" : "Course trend across assessments"} subtitle="Mean % per assessment"><MatrixLines columns={data.assessment_matrix.columns} rows={data.assessment_matrix.rows} /></Card>
         </>
       )}
     </>

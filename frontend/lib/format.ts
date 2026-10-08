@@ -48,13 +48,13 @@ export const dateTime = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 export const semesterLabel = (s: string | null | undefined) => (s === "ODD" ? "Odd Semester" : s === "EVEN" ? "Even Semester" : "Full Academic Year");
 
-/** A colour for a percentage on the performance scale (used by heat maps and badges). */
+/** A colour for a percentage on the performance scale (used by the distribution and rank charts). */
 export function scaleColor(v: number | null | undefined): string {
-  if (v === null || v === undefined) return "var(--heat-empty)";
-  if (v < 45) return "var(--heat-1)";
-  if (v < 55) return "var(--heat-2)";
-  if (v < 62) return "var(--heat-3)";
-  if (v < 70) return "var(--heat-4)";
-  if (v < 78) return "var(--heat-5)";
-  return "var(--heat-6)";
+  if (v === null || v === undefined) return "var(--scale-empty)";
+  if (v < 45) return "var(--scale-1)";
+  if (v < 55) return "var(--scale-2)";
+  if (v < 62) return "var(--scale-3)";
+  if (v < 70) return "var(--scale-4)";
+  if (v < 78) return "var(--scale-5)";
+  return "var(--scale-6)";
 }
