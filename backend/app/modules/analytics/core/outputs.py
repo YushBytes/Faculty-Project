@@ -1,0 +1,1280 @@
+"""The eleven analytics output contracts, and the explainability payload they all share.
+
+Every model here is what an analytics function *returns* and what a router serialises. They
+are plain typed data: no session, no ORM, no I/O, so each can be built in a test from
+hand-computed numbers and compared field by field.
+
+The rule that shapes all of them: **a derived number must arrive with enough beside it to
+explain itself.** In practice that means four things travel with every output.
+
+``Measure`` / ``Label``
+    The value, its unit or vocabulary, the ``n`` it was computed over, and — when it could
+    not be computed — ``status="insufficient_data"`` with a reason instead of a fabricated
+    zero (contract C10).
+``DataCoverage``
+    How many students or assessments were assessed, absent, exempt or missing. This is what
+    makes "mean 62%" honest: it says who was not in it.
+``ResolvedThreshold``
+    The threshold the rule compared against *and where that number came from*, so an
+    explanation can say "50%, set for this offering" rather than just "50%".
+``Explanation``
+    The formula, the evidence, and any caveat that must be read with the number.
+
+Two caveats are enforced rather than documented, because they are the two places this
+system could most easily mislead a teacher: comparisons across assessments carry
+:data:`DIFFICULTY_CAVEAT` (a harder paper looks like a declining class), and intervention
+outcomes carry :data:`OBSERVATIONAL_CAVEAT` (a change observed after an action is not a
+change caused by it). Messages and insight text are additionally screened for predictive
+and causal wording; see :data:`FORBIDDEN_PHRASES`.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from collections.abc import Iterable, Mapping
+from datetime import datetime
+from typing import Final, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.types import JsonDecimal, Percent
+from app.modules.analytics.core.contracts import AssessmentRef, StudentRef
+from app.modules.analytics.core.policy import DerivedState, SeriesPoint
+from app.modules.analytics.core.results import Label, Measure, Unit
+from app.modules.analytics.core.rules import (
+    AttentionRuleCode,
+    FlagSeverity,
+    FlagStatus,
+    requires_attention,
+)
+from app.modules.analytics.core.thresholds import ResolvedThreshold
+from app.modules.analytics.core.vocabulary import (
+    ChangeDirection,
+    ClassFindingCode,
+    InsightCode,
+    InsightScope,
+    SegmentLabel,
+    StudentFindingCode,
+    TrendMethod,
+)
+
+DIFFICULTY_CAVEAT: Final[str] = (
+    "Assessments are not equated for difficulty: a harder paper lowers percentages across "
+    "the cohort, so a change between assessments is not by itself evidence about the students."
+)
+"""RISK-10. Required on any output that compares one assessment against another."""
+
+OBSERVATIONAL_CAVEAT: Final[str] = (
+    "Observed change only. Students were not randomly assigned and no control was held, so "
+    "this comparison does not show that the intervention caused the change."
+)
+"""CONFLICT-3 / section 10. Required on every intervention outcome."""
+
+FORBIDDEN_PHRASES: Final[tuple[str, ...]] = (
+    "will fail",
+    "will pass",
+    "at risk of failing",
+    "high risk",
+    "risk score",
+    "likely to fail",
+    "predicts",
+    "prediction",
+    "forecast",
+    "caused by",
+    "because the student",
+    "due to lack of",
+    # Phase 6: the vocabulary an intervention report must never reach for. Observing that
+    # marks rose after an action is not the same claim as the action having worked, and
+    # these are the words that quietly turn one into the other.
+    "treatment effect",
+    "causal",
+    "effectiveness",
+    "effective intervention",
+    "ineffective",
+    "proves",
+    "proved",
+    "resulted from",
+)
+"""Wording analytics may never emit: prediction, risk scoring, or an invented cause.
+
+Screened in :class:`AttentionFlag` messages and :class:`GeneratedInsight` text, which are
+the only free-text fields that reach a teacher. The list is deliberately about *claims*, not
+tone: "below the pass mark in three consecutive assessments" is a fact and passes; "at risk
+of failing" is a prediction this system is not allowed to make.
+"""
+
+_WORD_BOUNDARY = re.compile(r"[^a-z]+")
+
+
+def _reject_forbidden_wording(text: str, *, field: str) -> str:
+    """Reject predictive or causal claims in text that reaches a user.
+
+    Matched on **whole words**, not substrings. "proved" must not fire inside "improved",
+    which the system says constantly and legitimately — "4 students improved by at least 5
+    percentage points" is exactly the kind of neutral observation this layer exists to make.
+    A substring match would ban the sentence and, worse, teach the next author to phrase
+    findings around the screen rather than around the data.
+    """
+    # Padded with spaces so a phrase matches only whole words: 'proved' must not fire
+    # inside 'improved', which the system says constantly and legitimately.
+    normalised = f" {' '.join(_WORD_BOUNDARY.split(text.lower())).strip()} "
+    found = [phrase for phrase in FORBIDDEN_PHRASES if f" {phrase} " in normalised]
+    if found:
+        raise ValueError(
+            f"{field} contains forbidden wording {found}: analytics states what the data "
+            "shows, and never predicts an outcome or asserts a cause. Rephrase as an "
+            "observation with its numbers."
+        )
+    return text
+
+
+class _Frozen(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class _Generated(_Frozen):
+    """An output stamped with when it was computed.
+
+    Timezone-aware only: these timestamps end up in reports and stored flags, where a naive
+    one silently becomes whatever the reader's timezone is.
+    """
+
+    generated_at: datetime
+
+    @model_validator(mode="after")
+    def _timestamp_is_aware(self) -> Self:
+        stamp = self.generated_at
+        if stamp.tzinfo is None or stamp.tzinfo.utcoffset(stamp) is None:
+            raise ValueError("generated_at must be timezone-aware")
+        return self
+
+
+# --------------------------------------------------------------------- explainability
+
+
+class EvidenceItem(_Frozen):
+    """One named fact behind a derived number, rendered for display.
+
+    ``value`` is a string because evidence is heterogeneous — a percentage, a count, an
+    assessment code, a status word — and it exists to be read, not recomputed.
+    """
+
+    name: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    unit: Unit | None = None
+    note: str | None = None
+
+
+class Explanation(_Frozen):
+    """How one output was produced: the arithmetic, the inputs, the warnings.
+
+    Present on every derived contract in this module. An explanation with no evidence is
+    allowed only where the output is itself the evidence (a raw percentage, say); everything
+    derived from more than one number must list what went into it.
+    """
+
+    narrative: str = Field(min_length=1)
+    """One or two sentences of plain language, stating values and thresholds."""
+
+    formula: str | None = None
+    """The arithmetic in symbols, e.g. ``W = sum(P_a * w_a) / sum(w_a)``."""
+
+    evidence: tuple[EvidenceItem, ...] = ()
+    thresholds: tuple[ResolvedThreshold, ...] = ()
+    pass_mark_percent: Percent | None = None
+    assessments_used: tuple[str, ...] = ()
+    """Assessment codes, in the order they contributed."""
+
+    caveats: tuple[str, ...] = ()
+
+    def with_caveat(self, caveat: str) -> Explanation:
+        """A copy carrying one more caveat, if it is not already there."""
+        if caveat in self.caveats:
+            return self
+        return self.model_copy(update={"caveats": (*self.caveats, caveat)})
+
+    def requires(self, caveat: str, *, field: str) -> None:
+        """Assert a mandatory caveat is present."""
+        if caveat not in self.caveats:
+            raise ValueError(f"{field} must carry the caveat: {caveat}")
+
+
+class DataCoverage(_Frozen):
+    """Who is behind a statistic, and who is not.
+
+    Absent, exempt and missing are counted separately and never folded into a zero. Exempt
+    is the one state excluded from the completion denominator: the student was not required
+    to sit the assessment, so counting it against them would manufacture a problem.
+    """
+
+    assessed: int = Field(ge=0)
+    absent: int = Field(ge=0)
+    exempt: int = Field(ge=0)
+    missing: int = Field(ge=0)
+    basis: str = Field(min_length=1)
+    """What the counts are over, e.g. "active enrolled students in this offering"."""
+
+    @property
+    def considered(self) -> int:
+        """Every unit looked at, in any state."""
+        return self.assessed + self.absent + self.exempt + self.missing
+
+    @property
+    def completion_denominator(self) -> int:
+        """Everything the students were expected to sit: exempt excluded."""
+        return self.assessed + self.absent + self.missing
+
+    @property
+    def excluded_states(self) -> Mapping[DerivedState, int]:
+        """The non-assessed states and their counts, for an explanation's evidence."""
+        return {
+            DerivedState.ABSENT: self.absent,
+            DerivedState.EXEMPT: self.exempt,
+            DerivedState.MISSING: self.missing,
+        }
+
+    @classmethod
+    def from_states(cls, states: Iterable[DerivedState], *, basis: str) -> DataCoverage:
+        counts = dict.fromkeys(DerivedState, 0)
+        for state in states:
+            counts[state] += 1
+        return cls(
+            assessed=counts[DerivedState.ASSESSED],
+            absent=counts[DerivedState.ABSENT],
+            exempt=counts[DerivedState.EXEMPT],
+            missing=counts[DerivedState.MISSING],
+            basis=basis,
+        )
+
+
+class ExtremeScore(_Frozen):
+    """A minimum or maximum, with the student it belongs to.
+
+    Section 10 requires min/max to carry a student reference: a lowest score with no name
+    cannot be acted on.
+    """
+
+    student: StudentRef
+    percentage: Percent
+    assessment_code: str | None = None
+
+
+# ------------------------------------------------------------------ 6. ScoreDistribution
+
+HISTOGRAM_BINS: Final[tuple[tuple[int, int], ...]] = (
+    (0, 9),
+    (10, 19),
+    (20, 29),
+    (30, 39),
+    (40, 49),
+    (50, 59),
+    (60, 69),
+    (70, 79),
+    (80, 89),
+    (90, 100),
+)
+"""Ten fixed bins. The last is 90-100 inclusive, so a perfect score has a home."""
+
+
+class DistributionBin(_Frozen):
+    """One histogram bin: its inclusive bounds, its count and its share."""
+
+    lower: int = Field(ge=0, le=100)
+    upper: int = Field(ge=0, le=100)
+    count: int = Field(ge=0)
+    share_percent: Percent
+    """``100 * count / n``, so a chart can be drawn without recomputing it."""
+
+    @property
+    def label(self) -> str:
+        return f"{self.lower}-{self.upper}"
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.upper < self.lower:
+            raise ValueError(f"bin upper {self.upper} is below lower {self.lower}")
+        return self
+
+
+class ScoreDistribution(_Frozen):
+    """**Contract 6.** How one assessment's percentages are spread across the cohort.
+
+    Only assessed students are binned; ``coverage`` states who was left out and why. The
+    bins must be the canonical ten and the counts must sum to ``n``, both checked here, so
+    a distribution can never quietly lose a student.
+    """
+
+    offering_id: uuid.UUID
+    assessment: AssessmentRef | None = None
+    """``None`` when the distribution is over a derived series, e.g. weighted course scores."""
+
+    bins: tuple[DistributionBin, ...]
+    n: int = Field(ge=0)
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _bins_are_canonical_and_complete(self) -> Self:
+        bounds = tuple((b.lower, b.upper) for b in self.bins)
+        if bounds != HISTOGRAM_BINS:
+            raise ValueError(
+                f"distribution bins must be the canonical ten {HISTOGRAM_BINS}, got {bounds}"
+            )
+        total = sum(b.count for b in self.bins)
+        if total != self.n:
+            raise ValueError(f"bin counts sum to {total} but n is {self.n}")
+        if self.n != self.coverage.assessed:
+            raise ValueError(
+                f"n is {self.n} but coverage reports {self.coverage.assessed} assessed; "
+                "only assessed students are binned"
+            )
+        return self
+
+
+# ---------------------------------------------------------------- 1. AssessmentAnalytics
+
+
+class AssessmentAnalytics(_Generated):
+    """**Contract 1.** Everything about one assessment across its cohort.
+
+    The group statistics are over assessed students only. ``pass_percent`` is the share of
+    *assessed* students at or above the offering's pass mark — not the share of the whole
+    cohort, which would silently punish an absence — and ``completion_percent`` is the
+    separate figure that reports the absences.
+    """
+
+    offering_id: uuid.UUID
+    assessment: AssessmentRef
+    pass_mark_percent: Percent
+
+    mean: Measure
+    median: Measure
+    std_dev: Measure
+    lowest: ExtremeScore | None = None
+    highest: ExtremeScore | None = None
+    pass_percent: Measure
+    completion_percent: Measure
+    distribution: ScoreDistribution
+
+    coverage: DataCoverage
+    explanation: Explanation
+
+
+# -------------------------------------------------------- 2. StudentAssessmentPerformance
+
+
+class StudentAssessmentPerformance(_Generated):
+    """**Contract 2.** One student in one assessment.
+
+    ``state`` is authoritative. When it is not ``ASSESSED`` there is no score and no
+    percentage: ``percentage`` arrives as an insufficient-data measure naming the state, and
+    ``score`` is ``None``. That is the contract that keeps an absence from becoming a zero
+    two layers further up.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    assessment: AssessmentRef
+    state: DerivedState
+
+    score: JsonDecimal | None = Field(default=None, ge=0)
+    max_marks: JsonDecimal = Field(gt=0)
+    percentage: Measure
+    difference_from_class_mean: Measure
+    """Signed percentage points against the assessment's mean, over assessed students."""
+
+    meets_pass_mark: bool | None = None
+    """``None`` when the student was not assessed: unknown, not false."""
+
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _non_assessed_carries_no_score(self) -> Self:
+        if self.state is DerivedState.ASSESSED:
+            if self.score is None:
+                raise ValueError("an assessed performance must carry a score")
+            return self
+        if self.score is not None:
+            raise ValueError(
+                f"a {self.state.value} performance must not carry a score; "
+                "absent, exempt and missing are not zero"
+            )
+        if self.percentage.is_ok:
+            raise ValueError(
+                f"a {self.state.value} performance must not carry a percentage; "
+                "report it as insufficient_data naming the state"
+            )
+        if self.meets_pass_mark is not None:
+            raise ValueError(
+                f"a {self.state.value} performance cannot be said to meet or miss the pass "
+                "mark; leave meets_pass_mark null"
+            )
+        return self
+
+
+# ------------------------------------------------------------------------ 4. StudentTrend
+
+
+class StudentTrend(_Generated):
+    """**Contract 4.** The direction of one student's percentage series.
+
+    Deliberately explicit about its own weakness: ``method`` distinguishes a two-point
+    difference from a fitted slope, ``points_used`` names the assessments, and the
+    difficulty caveat is mandatory, because a class-wide "decline" is at least as likely to
+    be a harder paper as a change in the students.
+    """
+
+    offering_id: uuid.UUID
+    student_id: uuid.UUID
+    label: Label
+    """Vocabulary ``trend``; ``status=insufficient_data`` below the minimum points."""
+
+    slope: Measure
+    """Percentage points per assessment. Signed: negative is a fall."""
+
+    method: TrendMethod | None = None
+    """``None`` when there were too few points to classify."""
+
+    points_used: tuple[str, ...] = ()
+    percentages_used: tuple[JsonDecimal, ...] = ()
+    threshold: ResolvedThreshold
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _explains_itself(self) -> Self:
+        self.explanation.requires(DIFFICULTY_CAVEAT, field="StudentTrend.explanation")
+        if self.label.is_ok and self.method is None:
+            raise ValueError("a classified trend must name the method that produced it")
+        if len(self.points_used) != len(self.percentages_used):
+            raise ValueError("points_used and percentages_used must line up one to one")
+        if self.label.is_ok and len(self.percentages_used) < 2:
+            raise ValueError("a classified trend must quote at least two percentages")
+        return self
+
+
+# ------------------------------------------------------------ 3. StudentPerformanceHistory
+
+
+class StudentPerformanceHistory(_Generated):
+    """**Contract 3.** One student's whole story within one offering.
+
+    The weighted course score is over *completed* assessments only, so an assessment that
+    has not happened yet cannot drag a student down. Consistency is the standard deviation
+    of the same series, gated on its own minimum, because two points describe no spread.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    points: tuple[SeriesPoint, ...]
+    """Every published assessment, including the ones with no result: a gap is information."""
+
+    weighted_course_score: Measure
+    completion_percent: Measure
+    consistency_std_dev: Measure
+    volatility_range: Measure
+    trend: StudentTrend
+    latest: StudentAssessmentPerformance | None = None
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _coverage_matches_the_series(self) -> Self:
+        counted = DataCoverage.from_states(
+            (p.state for p in self.points), basis=self.coverage.basis
+        )
+        if counted.model_dump() != self.coverage.model_dump():
+            raise ValueError(
+                "coverage does not match the series it describes: "
+                f"series is {counted.model_dump()}, coverage says {self.coverage.model_dump()}"
+            )
+        return self
+
+
+# ------------------------------------------- 12. StudentPerformanceProfile and its findings
+
+
+class StudentFinding(_Frozen):
+    """One condition a student's series either satisfies or does not, with the evidence.
+
+    Deliberately *not* an :class:`AttentionFlag`. A finding states what the numbers do; a
+    flag says someone should act, carries a severity and has a lifecycle. Keeping them
+    separate means the attention engine can raise a flag from a finding, while a report can
+    show the finding without implying a call to action.
+
+    ``detected`` is three-valued on purpose. ``None`` means the condition could not be
+    evaluated — too few completed assessments, usually — and is not the same answer as
+    ``False``. Saying "no sharp decline" about a student with one result would be a claim the
+    data does not support.
+    """
+
+    code: StudentFindingCode
+    detected: bool | None
+    measure: Measure
+    """The value the condition was evaluated on: the drop, the run length, the change."""
+
+    threshold: ResolvedThreshold | None = None
+    pass_mark_percent: Percent | None = None
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _undetermined_findings_carry_no_verdict(self) -> Self:
+        if self.detected is not None and not self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} reports detected={self.detected} from a measure that "
+                "could not be computed; an unevaluable condition is None, not False"
+            )
+        if self.detected is None and self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} has a computed measure but no verdict; if the value "
+                "exists the condition can be evaluated"
+            )
+        return self
+
+
+class ClassFinding(_Frozen):
+    """One cohort-level movement that either reached its configured magnitude or did not.
+
+    The same three-valued shape as :class:`StudentFinding`, for the same reason: a class
+    too small for the movement to mean anything gets ``detected=None``, which is not the
+    same answer as "the class did not move".
+
+    ``direction`` is carried separately from the sign of the measure so a reader never has
+    to infer it, and so "moved down by 10 pp" and "moved up by 10 pp" cannot be confused in
+    a report that shows magnitudes.
+    """
+
+    code: ClassFindingCode
+    detected: bool | None
+    direction: ChangeDirection | None = None
+    measure: Measure
+    """The signed movement, in percentage points, that the condition was evaluated on."""
+
+    threshold: ResolvedThreshold | None = None
+    n: int = Field(ge=0)
+    """Students the movement was measured over: the cohort intersection."""
+
+    minimum_n: int | None = Field(default=None, ge=0)
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _verdict_matches_the_evidence(self) -> Self:
+        if self.detected is not None and not self.measure.is_ok:
+            raise ValueError(
+                f"{self.code.value} reports detected={self.detected} from a measure that "
+                "could not be computed; an unevaluable movement is None, not False"
+            )
+        if self.detected is not None and self.direction is None:
+            raise ValueError(f"{self.code.value} was evaluated but does not say which way")
+        if self.detected is None and self.direction is not None:
+            raise ValueError(f"{self.code.value} could not be evaluated but claims a direction")
+        return self
+
+
+class StudentPerformanceProfile(_Generated):
+    """**Contract 12.** One student, read as a whole rather than as a list of numbers.
+
+    Phase 2 computes the measures; this composes them into the answer to "how is this
+    student doing over time?" — the history, the latest result beside the previous one, the
+    comparison against their own earlier work, the trend, and the conditions their series
+    satisfies. Nothing here recomputes a statistic: every number comes from the Phase 2
+    functions, so the profile and a bare measure can never disagree.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    history: StudentPerformanceHistory
+
+    latest: StudentAssessmentPerformance | None = None
+    """The most recent assessment the student was assessed in. Same object the history
+    carries, surfaced here so it reads beside ``previous``."""
+
+    previous: StudentAssessmentPerformance | None = None
+    """The one before that — the previous time there was a performance, skipping absences."""
+
+    change_from_previous: Measure
+    """``P_latest - P_previous``, in percentage **points**. Not a percentage change: a move
+    from 40% to 44% is +4 pp, never "+10%"."""
+
+    historical_average: Measure
+    """Mean of the completed assessments **before** the latest one, per F10's definition of
+    "prior history". The latest result is the thing being compared, not part of the baseline."""
+
+    change_from_historical_average: Measure
+    """``P_latest - historical_average``, signed. The same measure F10 evaluates."""
+
+    findings: tuple[StudentFinding, ...] = ()
+    explanation: Explanation
+
+    @property
+    def trend(self) -> StudentTrend:
+        """The trend, from the history. There is only one, computed once."""
+        return self.history.trend
+
+    def finding(self, code: StudentFindingCode) -> StudentFinding | None:
+        for found in self.findings:
+            if found.code is code:
+                return found
+        return None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        codes = [found.code for found in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
+        if self.previous is None and self.change_from_previous.is_ok:
+            raise ValueError(
+                "a change from the previous assessment was reported without a previous "
+                "assessment to compare against"
+            )
+        if (
+            self.latest is not None
+            and self.history.latest is not None
+            and self.latest.assessment.id != self.history.latest.assessment.id
+        ):
+            raise ValueError(
+                "the profile's latest assessment disagrees with the history's; they must be "
+                "the same performance"
+            )
+        if (self.latest is None) != (self.history.latest is None):
+            raise ValueError("the profile and its history disagree about whether a latest exists")
+        return self
+
+
+# ---------------------------------------------------------------------- 7. StudentSegment
+
+
+class SegmentFactor(_Frozen):
+    """One segment a student satisfies, with the evidence for it."""
+
+    segment: SegmentLabel
+    explanation: Explanation
+
+
+class StudentSegment(_Generated):
+    """**Contract 7.** One primary actionable status, plus everything else that is true.
+
+    A student is often several things at once — borderline *and* improving. Returning one
+    label would hide half of that and returning an unordered set would give a teacher
+    nothing to act on, so the primary is chosen by :data:`SEGMENT_PRIORITY` and the rest
+    travel with it.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    primary: Label
+    """Vocabulary ``segment``; ``status=insufficient_data`` when nothing can be said."""
+
+    factors: tuple[SegmentFactor, ...] = ()
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _primary_is_one_of_the_factors(self) -> Self:
+        if self.primary.is_ok:
+            satisfied = {f.segment.value for f in self.factors}
+            if self.primary.value not in satisfied:
+                raise ValueError(
+                    f"primary segment {self.primary.value!r} is not among the satisfied "
+                    f"factors {sorted(satisfied)}"
+                )
+        elif self.factors:
+            raise ValueError(
+                "an insufficient-data segment must not list satisfied factors: "
+                "if a factor was satisfied, something could be said"
+            )
+        return self
+
+
+# ------------------------------------------------------------------------ 8. AttentionFlag
+
+
+class AttentionFlag(_Generated):
+    """**Contract 8.** One fired rule, for one student, with everything needed to justify it.
+
+    Carries the fields dependency D6 persists (``rule_code``, ``severity``, ``threshold``,
+    ``actual_value``, ``message``, ``status``, ``computed_at``) plus the reference
+    assessments and ``n``. The message is screened for predictive and causal wording: this
+    is the single field most likely to end up quoted to a student.
+    """
+
+    offering_id: uuid.UUID
+    student_id: uuid.UUID
+    rule_code: AttentionRuleCode
+    severity: FlagSeverity
+    status: FlagStatus = FlagStatus.OPEN
+
+    actual: Measure
+    threshold: ResolvedThreshold | None = None
+    """``None`` for R2, which compares against the offering's pass mark instead."""
+
+    pass_mark_percent: Percent | None = None
+    reference_assessments: tuple[str, ...] = ()
+    message: str = Field(min_length=1)
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _states_what_it_compared(self) -> Self:
+        _reject_forbidden_wording(self.message, field="AttentionFlag.message")
+        if self.threshold is None and self.pass_mark_percent is None:
+            raise ValueError(
+                f"{self.rule_code.value} must quote either a resolved threshold or the "
+                "offering's pass mark; a flag with no stated comparison cannot be explained"
+            )
+        if not self.actual.is_ok:
+            raise ValueError(
+                "a raised flag must carry the value that fired it; if the value could not "
+                "be computed the rule must not fire"
+            )
+        return self
+
+
+SEVERITY_ORDER: Final[tuple[FlagSeverity, ...]] = (
+    FlagSeverity.HIGH,
+    FlagSeverity.MEDIUM,
+    FlagSeverity.LOW,
+)
+"""Loudest first. A display order and a way to name the highest severity present.
+
+Not a priority between *rules*: R1 and R3 are both High, and nothing in contract C9 ranks
+one above the other. Flags themselves are ordered by rule code.
+"""
+
+
+def highest_severity(flags: tuple[AttentionFlag, ...]) -> FlagSeverity | None:
+    """The loudest severity among these flags, or ``None`` when there are none."""
+    present = {flag.severity for flag in flags}
+    return next((severity for severity in SEVERITY_ORDER if severity in present), None)
+
+
+class StudentAttention(_Generated):
+    """**Contract 14.** Every rule one student fired, and whether that amounts to attention.
+
+    The canonical home for the verdict. ``requires_attention`` is validated against
+    :func:`~app.modules.analytics.core.rules.requires_attention` over this student's own
+    severities, so a caller cannot reach a different answer from the same flags — the
+    escalation rule (any High, or two Mediums; Low is informational alone) is applied once,
+    here, and never re-derived downstream.
+
+    All fired rules are kept. A student who is low, failed the latest paper and has been
+    below the mark three times running holds three flags, not one summarised one: each names
+    a different fact, and a teacher acting on it needs all three.
+
+    ``flags`` are ordered by rule code, R1 through R7. That is **determinism, not priority**
+    — it makes two renderings of the same cohort identical and nothing more.
+
+    An empty ``flags`` tuple means *evaluated, and nothing fired*. It never means "not
+    evaluated": that state is the absence of a ``StudentAttention`` altogether, and at class
+    level it is :attr:`ClassHealth.students_requiring_attention` being ``None``.
+    """
+
+    offering_id: uuid.UUID
+    student: StudentRef
+    flags: tuple[AttentionFlag, ...] = ()
+    requires_attention: bool
+    highest_severity: FlagSeverity | None = None
+    explanation: Explanation
+
+    @property
+    def flag_codes(self) -> tuple[AttentionRuleCode, ...]:
+        return tuple(flag.rule_code for flag in self.flags)
+
+    @model_validator(mode="after")
+    def _verdict_follows_from_the_flags(self) -> Self:
+        codes = [flag.rule_code for flag in self.flags]
+        if len(codes) != len(set(codes)):
+            raise ValueError(
+                f"a rule fired twice for one student: {sorted(c.value for c in codes)}. "
+                "Each rule holds at most one flag per student."
+            )
+        if codes != sorted(codes, key=list(AttentionRuleCode).index):
+            raise ValueError("flags must be ordered by rule code, R1 through R7")
+
+        for flag in self.flags:
+            if flag.student_id != self.student.id:
+                raise ValueError(
+                    f"flag {flag.rule_code.value} belongs to student {flag.student_id}, not "
+                    f"{self.student.id}"
+                )
+            if flag.offering_id != self.offering_id:
+                raise ValueError(f"flag {flag.rule_code.value} belongs to another offering")
+
+        expected = requires_attention(flag.severity for flag in self.flags)
+        if self.requires_attention != expected:
+            raise ValueError(
+                f"requires_attention is {self.requires_attention} but the escalation rule "
+                f"over {[c.value for c in codes]} gives {expected}; the verdict is derived, "
+                "not asserted"
+            )
+        if self.highest_severity != highest_severity(self.flags):
+            raise ValueError("highest_severity disagrees with the flags it describes")
+        return self
+
+
+# --------------------------------------------------------------------------- 5. ClassHealth
+
+
+class ClassHealth(_Generated):
+    """**Contract 5.** Offering-level KPIs, as a dashboard header.
+
+    Everything here is an aggregate of the contracts above; nothing is computed a second
+    way.
+
+    **Two different questions, kept apart.** ``class_mean`` is the mean of the students'
+    *weighted course scores* — how the class is doing in the course. The latest paper's own
+    statistics live in ``latest_assessment``. They answer different questions and differ by
+    a lot (in the canonical fixture, 57.36 against 53.50), so mixing them would make a
+    dashboard quietly wrong.
+
+    ``students_requiring_attention`` is ``None`` when this build did not evaluate attention
+    at all. That is deliberately **not** an insufficient-data measure: "we did not look" and
+    "we looked and the data was too thin" are different statements, and only the second one
+    is about the students. The attention engine fills it in a later phase.
+    """
+
+    offering_id: uuid.UUID
+    pass_mark_percent: Percent
+    cohort_n: int = Field(ge=0)
+    published_assessments: int = Field(ge=0)
+
+    class_mean: Measure
+    """Mean of the students' weighted course scores, over students who have one."""
+
+    median: Measure
+    pass_percent: Measure
+    """Share of students whose weighted course score is at or above the pass mark."""
+
+    completion_percent: Measure
+    """Over every (student, published assessment) cell the cohort was required to sit."""
+
+    students_requiring_attention: Measure | None = None
+    """``None`` means attention was not evaluated in this build. See the class docstring."""
+
+    segment_counts: Mapping[SegmentLabel, int] = Field(default_factory=dict)
+    flag_counts: Mapping[FlagSeverity, int] = Field(default_factory=dict)
+    """How many **flags** carry each severity. Empty while attention is unevaluated.
+
+    Flags, not students: one student who is low *and* repeatedly low holds two High flags.
+    ``rule_counts`` and ``students_requiring_attention`` are the student-counting fields.
+    """
+
+    rule_counts: Mapping[AttentionRuleCode, int] = Field(default_factory=dict)
+    """How many **students** fired each rule. A rule holds at most one flag per student, so
+    this counts students and flags alike; it is stated as students because that is what a
+    teacher acts on."""
+
+    course_score_distribution: ScoreDistribution | None = None
+    """The spread of weighted course scores across the cohort."""
+
+    findings: tuple[ClassFinding, ...] = ()
+    """Movements in the most recent comparison that reached their configured magnitude."""
+
+    latest_assessment: AssessmentAnalytics | None = None
+    latest_comparison: AssessmentComparison | None = None
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _counts_are_not_negative(self) -> Self:
+        for name, counts in (
+            ("segment_counts", self.segment_counts),
+            ("flag_counts", self.flag_counts),
+            ("rule_counts", self.rule_counts),
+        ):
+            bad = {k: v for k, v in counts.items() if v < 0}
+            if bad:
+                raise ValueError(f"{name} has negative entries {bad}")
+        if self.students_requiring_attention is None and (self.flag_counts or self.rule_counts):
+            raise ValueError(
+                "flag counts were reported without evaluating attention; leave them empty "
+                "rather than implying the flags were counted"
+            )
+        if self.students_requiring_attention is not None:
+            requiring = self.students_requiring_attention
+            if requiring.is_ok and requiring.value is not None and requiring.value > self.cohort_n:
+                raise ValueError(
+                    f"{requiring.value} students require attention in a cohort of {self.cohort_n}"
+                )
+        over = {k: v for k, v in self.rule_counts.items() if v > self.cohort_n}
+        if over:
+            raise ValueError(
+                f"rule counts exceed the cohort of {self.cohort_n}: {over}. A rule holds at "
+                "most one flag per student."
+            )
+        if sum(self.segment_counts.values()) > self.cohort_n:
+            raise ValueError(
+                f"segment counts total {sum(self.segment_counts.values())} for a cohort of "
+                f"{self.cohort_n}: each student has exactly one primary segment"
+            )
+        codes = [finding.code for finding in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
+        return self
+
+
+# --------------------------------------------------- 13. AssessmentComparison (F15)
+
+
+class AssessmentComparison(_Generated):
+    """**Contract 13.** How the same students' results moved between two assessments.
+
+    Every delta here is over the **cohort intersection** — the students assessed in *both*
+    assessments — and that is the whole point of the contract. Two assessments' published
+    means are over different sets of students, so subtracting them measures the change in
+    who sat the paper as much as the change in how they did. In the canonical fixture the
+    naive subtraction gives -1.27 pp and the honest one gives -4.00 pp.
+
+    Each assessment's own full-cohort statistics travel alongside in ``from_analytics`` and
+    ``to_analytics``, so both numbers are available and neither can be mistaken for the
+    other.
+
+    ``completion_change`` is the exception that proves the rule: participation is about who
+    sat at all, so it is measured over the **whole active cohort**, not the intersection.
+    Its two denominators are quoted in the explanation because they differ whenever someone
+    is exempt from one assessment and not the other.
+    """
+
+    offering_id: uuid.UUID
+    from_assessment: AssessmentRef
+    to_assessment: AssessmentRef
+    intersection_n: int = Field(ge=0)
+
+    from_mean: Measure | None = None
+    """The earlier assessment's mean **over the intersection** — not its own published mean.
+
+    Carried because it is what ``mean_change`` was computed from: a reader (or a report) that
+    wants to state the movement in full needs both endpoints, and recovering them from the
+    narrative would couple two modules through prose.
+    """
+
+    to_mean: Measure | None = None
+    """The later assessment's mean over the same intersection."""
+
+    mean_change: Measure
+    median_change: Measure
+    pass_percent_change: Measure
+    spread_change: Measure
+    """Change in population standard deviation: positive means the class spread out."""
+
+    completion_change: Measure
+    """Over the whole active cohort, not the intersection."""
+
+    from_analytics: AssessmentAnalytics | None = None
+    to_analytics: AssessmentAnalytics | None = None
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _ordered_and_caveated(self) -> Self:
+        self.explanation.requires(DIFFICULTY_CAVEAT, field="AssessmentComparison.explanation")
+        if self.from_assessment.id == self.to_assessment.id:
+            raise ValueError("an assessment cannot be compared with itself")
+        if self.from_assessment.sequence_no >= self.to_assessment.sequence_no:
+            raise ValueError(
+                f"{self.from_assessment.code} (sequence {self.from_assessment.sequence_no}) "
+                f"does not come before {self.to_assessment.code} "
+                f"(sequence {self.to_assessment.sequence_no}); a comparison reads forwards"
+            )
+        if self.intersection_n == 0 and self.mean_change.is_ok:
+            raise ValueError(
+                "no student was assessed in both assessments, so no change can be reported"
+            )
+        if (
+            self.from_mean is not None
+            and self.to_mean is not None
+            and self.from_mean.is_ok
+            and self.to_mean.is_ok
+            and self.mean_change.is_ok
+            and self.to_mean.value is not None
+            and self.from_mean.value is not None
+            and self.mean_change.value != self.to_mean.value - self.from_mean.value
+        ):
+            raise ValueError(
+                f"mean_change is {self.mean_change.value} but the endpoints differ by "
+                f"{self.to_mean.value - self.from_mean.value}; the change must be the "
+                "difference of the means it is reported with"
+            )
+        return self
+
+
+# ------------------------------------------------------------------------ 9. ChangeAnalysis
+
+
+class ChangeGroup(_Frozen):
+    """A counted set of students, with its members named.
+
+    Section 10 requires every "what changed" count to carry its member list: a teacher
+    cannot act on "4 students crossed below the pass mark" without knowing which four.
+    """
+
+    label: str = Field(min_length=1)
+    direction: ChangeDirection | None = None
+    students: tuple[StudentRef, ...] = ()
+
+    @property
+    def count(self) -> int:
+        return len(self.students)
+
+
+class ChangeAnalysis(_Generated):
+    """**Contract 9.** What the latest assessment changed, against the state before it.
+
+    Comparisons are over the **cohort intersection** — students with an assessed result in
+    both assessments — and ``intersection_n`` states its size, because a mean that moved
+    because a different set of students sat the paper has not moved at all.
+    """
+
+    offering_id: uuid.UUID
+    from_assessment: AssessmentRef | None = None
+    """``None`` when the latest assessment is the first: there is nothing to compare to."""
+
+    to_assessment: AssessmentRef
+    intersection_n: int = Field(ge=0)
+    class_mean_change: Measure
+    pass_percent_change: Measure
+    groups: tuple[ChangeGroup, ...] = ()
+    """Crossed the pass mark upward/downward, newly declining, newly flagged, and so on."""
+
+    comparison: AssessmentComparison | None = None
+    """The full statistical comparison this analysis is built on.
+
+    ``class_mean_change`` and ``pass_percent_change`` above are the *same objects* as the
+    comparison's, not a second calculation — they stay at the top level because they are
+    what a dashboard reads first.
+    """
+
+    findings: tuple[ClassFinding, ...] = ()
+    """Which movements reached the configured magnitude."""
+
+    new_flags: tuple[AttentionFlag, ...] = ()
+    """Attention flags raised by this assessment. Empty until the attention engine exists;
+    an empty tuple here means "none were raised", and a build that does not evaluate
+    attention at all says so in the explanation rather than implying a clean bill."""
+
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _comparisons_carry_the_difficulty_caveat(self) -> Self:
+        self.explanation.requires(DIFFICULTY_CAVEAT, field="ChangeAnalysis.explanation")
+        if self.from_assessment is None and (self.class_mean_change.is_ok or self.groups):
+            raise ValueError(
+                "there is no earlier assessment to compare against, so no change may be "
+                "reported; return insufficient_data instead"
+            )
+        if self.comparison is not None:
+            if self.comparison.to_assessment.id != self.to_assessment.id:
+                raise ValueError("the comparison describes a different assessment")
+            if self.comparison.mean_change != self.class_mean_change:
+                raise ValueError(
+                    "class_mean_change disagrees with the comparison it came from; it must "
+                    "be the same measure, not a second calculation"
+                )
+            if self.comparison.intersection_n != self.intersection_n:
+                raise ValueError("intersection_n disagrees with the comparison")
+        codes = [finding.code for finding in self.findings]
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"duplicate finding codes {sorted(c.value for c in codes)}")
+        return self
+
+
+# ------------------------------------------------------------------ 10. InterventionOutcome
+
+
+class OutcomeGroup(_Frozen):
+    """One side of an outcome comparison: the targeted students, or their peers.
+
+    Only students with an assessed result in **both** the baseline and the follow-up are
+    counted, so ``n`` is the size of that intersection, not of the group as recorded.
+    """
+
+    name: str = Field(min_length=1)
+    n: int = Field(ge=0)
+    pre_mean: Measure
+    post_mean: Measure
+    change: Measure
+    students: tuple[StudentRef, ...] = ()
+
+
+class InterventionOutcome(_Generated):
+    """**Contract 10.** The observed change after an intervention, against a peer baseline.
+
+    ``net_change = target.change - peers.change``. The peer group is what stops a
+    cohort-wide effect (an easier follow-up paper) being read as the intervention working.
+    The observational caveat is mandatory and the label vocabulary is deliberately worded as
+    comparison, never as achievement.
+    """
+
+    intervention_id: uuid.UUID
+    offering_id: uuid.UUID
+    baseline_assessments: tuple[AssessmentRef, ...] = ()
+    """Empty only when nothing preceded the intervention, which makes it unmeasurable."""
+
+    follow_up_assessment: AssessmentRef | None = None
+    """``None`` when no assessment has been held since; the outcome is then insufficient."""
+
+    target: OutcomeGroup
+    peers: OutcomeGroup
+    net_change: Measure
+    label: Label
+    """Vocabulary ``intervention_outcome``; insufficient below the minimum group size."""
+
+    coverage: DataCoverage
+    explanation: Explanation
+
+    @property
+    def is_measured(self) -> bool:
+        """Whether a change was actually reported, as against explained away."""
+        return self.label.is_ok
+
+    @model_validator(mode="after")
+    def _never_claims_causation(self) -> Self:
+        self.explanation.requires(OBSERVATIONAL_CAVEAT, field="InterventionOutcome.explanation")
+        _reject_forbidden_wording(
+            self.explanation.narrative, field="InterventionOutcome.explanation.narrative"
+        )
+
+        missing_window = not self.baseline_assessments or self.follow_up_assessment is None
+        if missing_window and self.label.is_ok:
+            raise ValueError(
+                "an outcome was labelled without both windows: with nothing before the "
+                "intervention or nothing since, there is no change to report"
+            )
+        if self.follow_up_assessment is not None and self.follow_up_assessment.id in {
+            a.id for a in self.baseline_assessments
+        }:
+            raise ValueError(
+                "the follow-up assessment must not also be a baseline assessment: "
+                "comparing an assessment with itself measures nothing"
+            )
+        if self.label.is_ok and not self.net_change.is_ok:
+            raise ValueError(
+                "an outcome cannot be labelled from a net change that could not be computed"
+            )
+        return self
+
+
+# ------------------------------------------------ 15. InterventionOutcomeSummary
+
+
+class InterventionOutcomeSummary(_Generated):
+    """**Contract 15.** Descriptive statistics across several interventions.
+
+    Counts and averages of *observed change*. Deliberately not a success rate and not an
+    effectiveness measure: the students who received interventions were chosen **because**
+    they were struggling, so their subsequent change is not comparable with anyone else's in
+    the way such a headline would imply. The field names say what the numbers are —
+    ``improved`` counts interventions whose targeted group's average went up, and nothing
+    more than that.
+    """
+
+    offering_id: uuid.UUID
+    interventions: int = Field(ge=0)
+    measurable: int = Field(ge=0)
+    """How many had both windows populated and both groups above the minimum size."""
+
+    mean_observed_change: Measure
+    median_observed_change: Measure
+    improved: int = Field(ge=0)
+    """Interventions whose targeted group's average rose. Not "successes"."""
+
+    declined: int = Field(ge=0)
+    unchanged: int = Field(ge=0)
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _counts_add_up(self) -> Self:
+        if self.measurable > self.interventions:
+            raise ValueError(
+                f"{self.measurable} measurable outcomes from {self.interventions} interventions"
+            )
+        counted = self.improved + self.declined + self.unchanged
+        if counted != self.measurable:
+            raise ValueError(
+                f"{counted} interventions counted up, down or unchanged, but "
+                f"{self.measurable} are measurable"
+            )
+        self.explanation.requires(
+            OBSERVATIONAL_CAVEAT, field="InterventionOutcomeSummary.explanation"
+        )
+        _reject_forbidden_wording(
+            self.explanation.narrative,
+            field="InterventionOutcomeSummary.explanation.narrative",
+        )
+        return self
+
+
+# ----------------------------------------------------------------- 11. GeneratedInsight
+
+
+class GeneratedInsight(_Generated):
+    """**Contract 11.** One deterministic sentence, and the numbers that produced it.
+
+    No LLM (section 11): a fixed template per :class:`InsightCode`, filled from analytics
+    outputs. ``evidence`` must be non-empty, so a sentence can never be shown that nothing
+    supports, and the text is screened for prediction and invented causes.
+    """
+
+    offering_id: uuid.UUID
+    scope: InsightScope
+    subject_id: uuid.UUID | None = None
+    """The student, assessment or intervention the insight is about; ``None`` for offering."""
+
+    code: InsightCode
+    text: str = Field(min_length=1)
+    severity: FlagSeverity | None = None
+    explanation: Explanation
+
+    @model_validator(mode="after")
+    def _traceable_and_not_predictive(self) -> Self:
+        _reject_forbidden_wording(self.text, field="GeneratedInsight.text")
+        if self.scope is not InsightScope.OFFERING and self.subject_id is None:
+            raise ValueError(f"a {self.scope.value}-scoped insight must name its subject_id")
+        if not self.explanation.evidence:
+            raise ValueError(
+                f"insight {self.code.value} carries no evidence: every insight sentence must "
+                "name the analytics values behind it"
+            )
+        return self
+
+
+REQUIRED_CONTRACT_NAMES: Final[tuple[str, ...]] = (
+    "AssessmentAnalytics",
+    "StudentAssessmentPerformance",
+    "StudentPerformanceHistory",
+    "StudentTrend",
+    "ClassHealth",
+    "ScoreDistribution",
+    "StudentSegment",
+    "AttentionFlag",
+    "ChangeAnalysis",
+    "InterventionOutcome",
+    "GeneratedInsight",
+)
+"""The eleven the Phase 1 brief named. They may never be dropped or renamed."""
+
+ANALYTICS_CONTRACTS: Final[tuple[type[BaseModel], ...]] = (
+    AssessmentAnalytics,
+    StudentAssessmentPerformance,
+    StudentPerformanceHistory,
+    StudentTrend,
+    ClassHealth,
+    ScoreDistribution,
+    StudentSegment,
+    AttentionFlag,
+    ChangeAnalysis,
+    InterventionOutcome,
+    GeneratedInsight,
+    StudentPerformanceProfile,
+    AssessmentComparison,
+    StudentAttention,
+    InterventionOutcomeSummary,
+)
+"""Every analytics response contract: the eleven above, then what later phases compose.
+
+:data:`REQUIRED_CONTRACT_NAMES` pins the original eleven; this tuple is what the structural
+tests sweep, so a new analytic's contract gets the same guarantees (frozen, no extra fields,
+carries an explanation, stamped) by being added here.
+
+Deliberately a tuple of the public outputs: a new analytic adds its contract here so the
+suite's structural checks (explainability payload, frozen, no extras) cover it too.
+"""

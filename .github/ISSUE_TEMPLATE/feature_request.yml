@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose a change or an addition
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't be done today, and who is blocked by it. Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who needs it
+      multiple: true
+      options:
+        - Faculty
+        - Course Coordinator
+        - Academic Head
+        - Head of Department
+        - Administrator
+    validations:
+      required: true
+
+  - type: textarea
+    id: semantics
+    attributes:
+      label: Effect on the analytics semantics
+      description: |
+        The rules in `docs/ANALYTICS_SPEC.md` hold throughout: absent, exempt and missing are
+        never zero; pass percentage is over students with a result; a trend without enough
+        assessments reports insufficient data; attention is explained rules, not a score;
+        intervention outcomes are observations, never causes.
+
+        Say "none" if the change does not touch any of these — or which one it would change, and
+        why that is correct.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false

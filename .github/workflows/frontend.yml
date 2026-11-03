@@ -1,0 +1,55 @@
+# Frontend CI: lint and a production build of the Next.js web app.
+#
+# The build is the real check here. The web app has no test suite of its own; its server routes
+# forward to the API, and the behaviour they wrap is covered by the backend suite. What can break
+# silently is a type error or a server/client boundary mistake, and `next build` catches both.
+#
+# Node 22 matches frontend/Dockerfile. No API is needed: ACADLYTICS_API_URL is only read at
+# request time, so a build does not contact the backend.
+
+name: frontend
+
+on:
+  push:
+    branches: [main, backend]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    branches: [main, backend]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

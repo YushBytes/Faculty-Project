@@ -12,7 +12,7 @@ htmlcov/
 .vscode/
 .DS_Store
 
-# --- Added by Agent 2 (Phase 0): build output, extra caches, local data, Windows/OneDrive noise ---
+# --- Build output, extra caches, local data, Windows/OneDrive noise ---
 build/
 dist/
 .eggs/
