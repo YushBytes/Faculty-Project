@@ -1,6 +1,6 @@
 """The import validation engine, tested as a pure function (no database).
 
-One test per validation rule from the Agent 1 brief and blueprint §13.2.
+One test per validation rule from the platform brief and blueprint §13.2.
 """
 
 import uuid

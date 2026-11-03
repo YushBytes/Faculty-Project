@@ -33,7 +33,7 @@ REPORT_KINDS = (
 
 
 def read_paths(offering_id: uuid.UUID, student_id: uuid.UUID) -> list[str]:
-    """Every GET an offering exposes, Agent 2's surface plus the platform reads it builds on."""
+    """Every GET an offering exposes: the analytics surface plus the platform reads it builds on."""
     base = f"/api/v1/offerings/{offering_id}"
     return [
         f"{base}/analytics",

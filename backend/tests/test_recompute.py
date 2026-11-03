@@ -1,8 +1,8 @@
 """The real C4 recompute: attention flags materialised on the results write path.
 
 Every test drives the *platform's own* write endpoint rather than calling the hook by hand,
-because the thing under test is the integration: Agent 1 calls the hook inside its transaction,
-and the flags have to land with the results that caused them.
+because the thing under test is the integration: the platform calls the hook inside its
+transaction, and the flags have to land with the results that caused them.
 
 Note on the fixtures: a student with **no** result has 0% completion and fires R6, so every
 write below records a result for the whole cohort. Leaving one out would flag them for something
@@ -356,7 +356,7 @@ class TestHookIsolation:
         assert hook._impl is recompute_assessment
 
     def test_a_spy_still_replaces_the_hook_while_it_is_installed(self) -> None:
-        """Agent 1's suites depend on this half: the replacement must actually take effect."""
+        """The platform suites depend on this half: the replacement must actually take effect."""
         from app.core import recompute as hook
 
         calls: list[uuid.UUID] = []
