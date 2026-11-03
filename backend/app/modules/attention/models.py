@@ -48,7 +48,7 @@ LIVE_FLAG_STATUSES = (FlagStatus.OPEN, FlagStatus.ACKNOWLEDGED)
 
 
 def _values(enum: type[StrEnum]) -> list[str]:
-    """Store the enum's *values*, matching Agent 1's convention (see assessments.models)."""
+    """Store the enum's *values*, matching Platform layer's convention (see assessments.models)."""
     return [m.value for m in enum]
 
 

@@ -1,5 +1,9 @@
 # ACADLYTICS
 
+[![backend](https://github.com/YushBytes/Faculty-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/YushBytes/Faculty-Project/actions/workflows/ci.yml)
+[![frontend](https://github.com/YushBytes/Faculty-Project/actions/workflows/frontend.yml/badge.svg)](https://github.com/YushBytes/Faculty-Project/actions/workflows/frontend.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Academic performance intelligence for SRM Institute of Science and Technology.**
 
 ```
@@ -30,7 +34,7 @@ Prerequisites: **Docker Desktop** (Windows/macOS) or Docker Engine + Compose v2.
 ```bash
 git clone https://github.com/YushBytes/Faculty-Project.git
 cd Faculty-Project
-git checkout backend
+cp .env.example .env                  # ports and passwords live here
 docker compose up -d --build          # db + api + web
 ```
 
@@ -173,13 +177,25 @@ observations, never causes.
 ## 8. Repository
 
 ```
-backend/    FastAPI app: modules/{auth,users,organization,students,assessments,imports,
-            analytics,attention,interventions,reports,overview,audit}, Alembic 0001–0008, tests
-frontend/   Next.js 16 app: app/(app)/* pages, components/, lib/api (typed adapters), lib/auth
-demo/       sample TLP reports (fictional students) for trying uploads
-docs/       data model, import format, analytics specification and contracts
+backend/            FastAPI app: modules/{auth,users,organization,students,assessments,
+                    imports,analytics,attention,interventions,reports,overview,audit},
+                    Alembic 0001–0008, ~1,900 tests
+frontend/           Next.js 16 app: app/(app)/* pages, components/, lib/api (typed
+                    adapters), lib/auth
+demo/tlp-uploads/   Sample TLP reports (fictional students) for trying the import
+docs/               Data model, import format, analytics spec, contracts, architecture
+.github/            CI workflows, issue templates, pull request template
+docker-compose.yml  db + api + web
+.env.example        The tracked template for .env
 ```
 
-Documentation: [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md),
-[`docs/IMPORT_FORMAT.md`](docs/IMPORT_FORMAT.md), [`docs/ANALYTICS_SPEC.md`](docs/ANALYTICS_SPEC.md),
-[`docs/AGENT_2_ANALYTICS_CONTRACT.md`](docs/AGENT_2_ANALYTICS_CONTRACT.md).
+Branches: `main` is the reviewed project, `backend` is the working branch for platform and
+analytics changes, `frontend/*` for web app work.
+
+| | |
+|---|---|
+| **Documentation index** | [`docs/README.md`](docs/README.md) |
+| **Contributing and local checks** | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| **Reporting a vulnerability** | [`SECURITY.md`](SECURITY.md) |
+| **What was built, in order** | [`CHANGELOG.md`](CHANGELOG.md) |
+| **Licence** | [MIT](LICENSE) |

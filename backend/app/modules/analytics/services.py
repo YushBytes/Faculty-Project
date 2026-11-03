@@ -26,10 +26,11 @@ against:
     is what dependency D8 must ultimately satisfy.
 
 :class:`RecomputeHook`
-    Contract C4 / requirement U1, the hard handoff to Agent 1. Agent 1 calls it inside the
-    import-confirm transaction and after a results edit; the signature is agreed in Phase 1
-    so Agent 1 can ship a no-op stub in its Phase 3 and never be blocked by analytics. It
-    takes the caller's ``Session`` and **must not commit** (decision D-003): the results
+    Contract C4 / requirement U1, the hard handoff to the platform layer, which calls it
+    inside the import-confirm transaction and after a results edit; the signature is agreed
+    in Phase 1 so the platform layer can ship a no-op stub in its Phase 3 and never be
+    blocked by analytics. It takes the caller's ``Session`` and **must not commit**
+    (decision D-003): the results
     write and the recomputed flags land in one transaction or neither does.
 
 Implementations are Phase 4 (repository, services) and Phase 5 (recompute). Nothing is
@@ -118,7 +119,7 @@ class RecomputeHook(Protocol):
         internally and logs or discards it.
 
         Must not commit, must not open its own session, and must be idempotent: calling it
-        twice on unchanged data produces the same flags, because Agent 1's import confirm
+        twice on unchanged data produces the same flags, because Platform layer's import confirm
         may be retried.
         """
         ...

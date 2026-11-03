@@ -1,10 +1,10 @@
-# ACADLYTICS — Agent 2 Analytics Contract
+# ACADLYTICS — Analytics Contract
 
-What the platform (Agent 1) guarantees to the intelligence layer (Agent 2), and how to use it.
+What the platform layer guarantees to the analytics layer, and how to use it.
 Companion documents: `docs/PROJECT_CONTEXT.md` (contracts C1–C12, requests D1–D11),
 `docs/DATA_MODEL.md`, `docs/IMPORT_FORMAT.md`.
 
-## 1. Status of your requests
+## 1. Status of the analytics layer's requests
 
 | Id | Request | Status | Where |
 |---|---|---|---|
@@ -12,7 +12,7 @@ Companion documents: `docs/PROJECT_CONTEXT.md` (contracts C1–C12, requests D1�
 | D2 | results: nullable score + status enum | delivered | `assessment_results` (DECISION-1 shape) |
 | D3 | offerings: pass_percent + config JSONB | delivered | `course_offerings.pass_percent`, `.config` |
 | D4 | department settings table | delivered | `settings`, `SettingsService` |
-| D5 | interventions + intervention_students | **yours** — per TEAM_OWNERSHIP §2 you own intelligence models and their migration (next id `0007`) | — |
+| D5 | interventions + intervention_students | **yours** — per LAYER_OWNERSHIP §2 you own intelligence models and their migration (next id `0007`) | — |
 | D6 | attention_flags | **yours**, same as D5 | — |
 | D7 | recompute inside confirm and after results writes | delivered | `app/core/recompute.py` (§4) |
 | D8 | cohort + results read | delivered | `OfferingResultsService` (§2) |
@@ -85,7 +85,7 @@ Other reads you may use (all enforce scope when given a user):
 | department settings | `SettingsService(session).as_dict(department_id)` |
 | offerings a user teaches | `GET /api/v1/offerings?faculty_id=` or `visible_offerings` |
 
-If you need a query that does not exist, ask for a repository/service method (TEAM_OWNERSHIP §4)
+If you need a query that does not exist, ask for a repository/service method (LAYER_OWNERSHIP §4)
 rather than querying platform tables directly.
 
 ## 3. Missing-data semantics (C2) — what each state looks like

@@ -1,6 +1,6 @@
 # ACADLYTICS — Analytics Specification
 
-**Owner:** Agent 2 (analytics, intelligence, interventions, reporting)
+**Owner:** Analytics layer (analytics, intelligence, interventions, reporting)
 **Status:** Phase 11 complete — **F1–F21 implemented and served over `/api/v1`**, with CSV/XLSX/PDF downloads, and the deferred persistence delivered: `attention_flags` (D6), `interventions` / `intervention_students` / `intervention_reasons` (D5), migration `0007`, and the real C4 recompute. Phase 11 added the integration, security and schema-integrity layers and a CI pipeline.
 **Last updated:** 2026-09-29
 **Authority:** `docs/PROJECT_CONTEXT.md` (reduced-scope directive) wins over the blueprint wherever they disagree. This document refines, and never contradicts, §3, §4, §7 and §10 of that file.
@@ -75,7 +75,7 @@ A second set of API models would mean every analytics value existed twice with a
 
 ### Ownership boundary
 
-Analytics reads academic data **through the platform's services and repositories** (README rule 4), never by querying platform tables. Faculty scope, PII limits and the audit trail are then enforced once, where the data lives. A missing query is requested from Agent 1, not written here. Agent 2 creates no ORM models and authors no migrations.
+Analytics reads academic data **through the platform's services and repositories** (README rule 4), never by querying platform tables. Faculty scope, PII limits and the audit trail are then enforced once, where the data lives. A missing query is requested from Platform layer, not written here. Analytics layer creates no ORM models and authors no migrations.
 
 ---
 
@@ -1069,7 +1069,7 @@ If a test in this package ever needs a session, a formula has reached into the d
 
 ## 13. Pending platform dependencies
 
-Phase 1 is complete **against the data that exists**. These are needed before the matching analytics can run on real data, and all are requests to Agent 1 (`docs/PROJECT_CONTEXT.md` §12), not work Agent 2 may do:
+Phase 1 is complete **against the data that exists**. These are needed before the matching analytics can run on real data, and all are requests to Platform layer (`docs/PROJECT_CONTEXT.md` §12), not work Analytics layer may do:
 
 | Dependency | Blocks | Current state |
 |---|---|---|

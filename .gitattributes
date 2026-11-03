@@ -1,3 +1,28 @@
+# Text files are normalised to LF in the repository and checked out as LF everywhere, so a
+# Windows and a Linux clone produce identical files (this working copy is on Windows).
 * text=auto eol=lf
-*.xlsx binary
-*.png binary
+
+# Binary formats must never be line-ending converted. Git usually detects them by content, but a
+# declaration is not a guess: without it, a PDF or spreadsheet whose bytes happen to look texty
+# gets CRLF-rewritten on commit and is silently corrupted. The TLP sample reports under demo/ and
+# the fixtures under backend/tests/ are read byte-for-byte by the import parsers, so this matters.
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.zip   binary
+
+# Lockfiles are generated: collapse them in diffs and exclude them from language statistics.
+package-lock.json  linguist-generated=true -diff
+
+# Source material, not source code.
+docs/reference/**  linguist-documentation=true

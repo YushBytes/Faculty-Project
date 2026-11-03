@@ -1,7 +1,7 @@
 # ACADLYTICS — Data Model
 
 PostgreSQL 16, SQLAlchemy 2.x models under `backend/app/modules/*/models.py`, all registered in
-`backend/app/db/models.py`. Owner of these tables: Agent 1 (Agent 2 adds its own tables — attention
+`backend/app/db/models.py`. Owner of these tables: Platform layer (Analytics layer adds its own tables — attention
 flags, interventions — in its modules and the next migration numbers).
 
 IDs are UUID (`gen_random_uuid()`), timestamps `timestamptz`. Constraint names follow the fixed

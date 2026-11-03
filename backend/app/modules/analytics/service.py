@@ -1,6 +1,6 @@
 """The application-facing analytics service: one read, one computation, one response.
 
-This is the seam between Agent 1's platform and Agent 2's pure engine.
+This is the seam between the platform layer and the analytics layer's pure engine.
 
     OfferingResultsService (platform, scoped)
             v

@@ -7,9 +7,9 @@ the pure resolver in :mod:`app.modules.analytics.core.thresholds`. It lives outs
 data, so it never reads an environment variable itself.
 
 Why a separate settings class rather than fields on :class:`app.core.config.Settings`:
-``Settings`` is Agent 1's platform configuration and analytics owns the threshold key names
-by contract C5. Keeping the analytics block in the module that owns it means one agent's
-new threshold is not an edit to the other agent's file, while the mechanism — the same
+``Settings`` is the platform layer's own configuration and analytics owns the threshold key
+names by contract C5. Keeping the analytics block in the module that owns it means one layer's
+new threshold is not an edit to the other layer's file, while the mechanism — the same
 ``BaseSettings``, the same ``.env``, the same cached accessor — stays identical.
 
 Every field defaults to the built-in value in

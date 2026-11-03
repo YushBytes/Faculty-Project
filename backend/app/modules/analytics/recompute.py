@@ -1,6 +1,6 @@
 """The real C4 recompute (dependency D7 / requirement U1).
 
-Installed into the platform's hook at import time. Agent 1 calls it inside the writer's
+Installed into the platform's hook at import time. Platform layer calls it inside the writer's
 transaction, after the results are flushed and before commit, once per changed assessment:
 ``PUT /assessments/{id}/results``, ``DELETE .../results/{student_id}``,
 ``POST /imports/{id}/confirm``, ``POST /admin/recompute`` and the demo seed. **Those triggers

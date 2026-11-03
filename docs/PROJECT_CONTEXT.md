@@ -1,8 +1,8 @@
 # ACADLYTICS — Project Context
 
-**Status:** Agent 1's platform Phases 1–7 are complete on `backend` (auth/RBAC, organisation + scope, students, assessments + results, import pipeline, audit, seed data). The Agent 1 → Agent 2 handoff is `docs/AGENT_2_ANALYTICS_CONTRACT.md`; D1–D4 and D7–D11 are delivered, D5/D6 are Agent 2's own tables. Phase status moves fast — `README.md` on `backend` is the live source; the table in §14 records what this audit verified.
+**Status:** the platform layer's Phases 1–7 are complete (auth/RBAC, organisation + scope, students, assessments + results, import pipeline, audit, seed data). The platform → analytics handoff is `docs/ANALYTICS_CONTRACT.md`; D1–D4 and D7–D11 are delivered, D5/D6 are the analytics layer's own tables. `README.md` is the live source for current state; the table in §14 records what this audit verified.
 **Last updated:** 2026-09-26
-**Repository:** `YushBytes/Faculty-Project`. **Development happens on the `backend` branch**; `main` holds only a placeholder README and receives reviewed merges. Public — see RISK-16.
+**Repository:** `YushBytes/Faculty-Project`. `main` holds the reviewed project; `backend` is the working branch for platform and analytics changes. Public — see RISK-16.
 **Source documents:** `docs/reference/ACADLYTICS_Project_Blueprint.pdf` (50 pp., dated 2026-09-22) and the Master Project Context prompt (reduced-scope directive, 2026-09-26). `README.md` is authoritative for layout, ownership and API conventions.
 **Authority:** Where the blueprint and the reduced-scope directive disagree, **the reduced-scope directive wins.** Every such conflict is recorded in §11 and §12.
 
@@ -81,7 +81,7 @@ Register No | Student Name | Assessment | Score | Max Score | Percentage | Date 
 3. **Analytics must be complete and correct on assessment-level data alone.** They must not degrade into "insufficient data" everywhere merely because a question layer is absent.
 4. If question/topic structures are ever added for a future release, they must be **isolated**: no current analytic may read them, and no current analytic may break when they are empty.
 
-### Missing-data policy (binding on both agents)
+### Missing-data policy (binding on both layers)
 
 ```
 ABSENT != 0     MISSING != 0     NOT ASSESSED != 0     EXEMPT != 0
@@ -140,11 +140,11 @@ A **clean modular monolith**: one FastAPI service split into domain modules, one
 4. `assessment_results` is the **only source of truth**. Any summary/cache table must be fully rebuildable from it (`POST /admin/recompute`).
 5. Reports **format**; analytics **calculate**. No formula may be duplicated inside a report template.
 
-### Actual layout (single codebase, established by Agent 1 — follow it)
+### Actual layout (single codebase, established by Platform layer — follow it)
 
-The authoritative version is `README.md` on the `backend` branch ("One codebase, one branch"). Reproduced here because it defines where Agent 2 writes.
+The authoritative version is `README.md` on the `backend` branch ("One codebase, one branch"). Reproduced here because it defines where Analytics layer writes.
 
-**Both agents build the same application in the same tree** — one FastAPI app, one PostgreSQL database, one Alembic chain, one test suite — and both push to the **`backend`** branch. `main` only receives reviewed merges from `backend`.
+**Both layers build the same application in the same tree** — one FastAPI app, one PostgreSQL database, one Alembic chain, one test suite — and both push to the **`backend`** branch. `main` only receives reviewed merges from `backend`.
 
 ```
 backend/
@@ -152,21 +152,21 @@ backend/
     core/            config, security, errors, pagination
     db/
       base.py, session.py, mixins.py
-      models.py      every ORM model imported here (one list, both agents add to it)
-    api/v1.py        every router registered here (one list, both agents add to it)
-    modules/         one package per feature module, from both agents, side by side:
-      auth/ users/                                            done (Agent 1)
-      organization/ students/ assessments/ imports/ audit/    Agent 1
-      analytics/ attention/ interventions/ reports/           >>> AGENT 2
+      models.py      every ORM model imported here (one list, both layers add to it)
+    api/v1.py        every router registered here (one list, both layers add to it)
+    modules/         one package per feature module, from both layers, side by side:
+      auth/ users/                                            done (Platform layer)
+      organization/ students/ assessments/ imports/ audit/    Platform layer
+      analytics/ attention/ interventions/ reports/           >>> ANALYTICS LAYER
   alembic/versions/  one linear migration chain
   tests/             one suite: test_<module>*.py, shared fixtures in conftest.py
   pyproject.toml     one dependency list
 docker-compose.yml, .env.example, README.md
 ```
 
-Agent 2's modules are `analytics/`, `attention/`, `interventions/`, `reports/` under `app/modules/`, each with `models.py`, `schemas.py`, `repository.py`, `service.py`, `router.py`, plus a pure-function core (proposal: `app/modules/analytics/core/`) that imports no session, no `Base` and no model.
+Analytics layer's modules are `analytics/`, `attention/`, `interventions/`, `reports/` under `app/modules/`, each with `models.py`, `schemas.py`, `repository.py`, `service.py`, `router.py`, plus a pure-function core (proposal: `app/modules/analytics/core/`) that imports no session, no `Base` and no model.
 
-> **History note.** Phase 2 briefly introduced a per-agent file split (`app/intelligence/`, `routes_platform.py`/`routes_intelligence.py`, `models_platform.py`/`models_intelligence.py`, `tests/platform|intelligence/`). Commit `e2963ea` removed it in favour of the single tree above, and `main` was reset to a placeholder with development moved to `backend`. Ownership is therefore **logical, not file-level**: it is defined by which module and which formulas an agent owns, not by which files only one agent may open. Two consequences: the shared registries (`app/db/models.py`, `app/api/v1.py`) and `tests/`, `conftest.py`, `pyproject.toml` now take concurrent additive edits from both agents, so pull immediately before touching them; and migration revision IDs are a single sequential series (`0003`, `0004`, …), not per-agent prefixes.
+> **History note.** Phase 2 briefly introduced a per-agent file split (`app/intelligence/`, `routes_platform.py`/`routes_intelligence.py`, `models_platform.py`/`models_intelligence.py`, `tests/platform|intelligence/`). Commit `e2963ea` removed it in favour of the single tree above, and `main` was reset to a placeholder with development moved to `backend`. Ownership is therefore **logical, not file-level**: it is defined by which module and which formulas a layer owns, not by which files only one agent may open. Two consequences: the shared registries (`app/db/models.py`, `app/api/v1.py`) and `tests/`, `conftest.py`, `pyproject.toml` now take concurrent additive edits from both layers, so pull immediately before touching them; and migration revision IDs are a single sequential series (`0003`, `0004`, …), not per-agent prefixes.
 
 ### Working rules (from README, binding)
 
@@ -175,36 +175,36 @@ Agent 2's modules are `analytics/`, `attention/`, `interventions/`, `reports/` u
 3. **Reuse, don't duplicate.** Analytics reads students, offerings, assessments and results through the existing services/repositories, so faculty scope and PII rules are enforced in one place. Protect endpoints with `CurrentUser` / `require_roles(...)` from `app.modules.auth.dependencies`. **If a query you need is missing, add it to the owning module's repository** rather than querying its tables from elsewhere.
 4. **Migrations:** `git pull`, `alembic upgrade head`, then `alembic revision --autogenerate -m "..."`, renaming the revision ID to the next number in the single chain. `tests/test_migrations.py` fails on two heads or on model/schema drift; if two heads appear after a pull, point the newer migration's `down_revision` at the other one.
 5. **Before every push:** `git pull --rebase origin backend`, then `pytest` and `ruff check . && ruff format --check .` must pass.
-### Conventions inherited from Agent 1 (binding on Agent 2)
+### Conventions inherited from Platform layer (binding on Analytics layer)
 
 Originally recorded in `docs/DECISIONS.md` as D-001…D-008; that file was folded into `README.md` ("Design decisions") in Phase 2. Summarised here because they constrain how analytics code must be written. The D-numbers are kept for traceability.
 
-| Ref | Convention | What it means for Agent 2 |
+| Ref | Convention | What it means for Analytics layer |
 |-----|-----------|---------------------------|
 | D-001 | `router.py -> service.py -> repository.py` per module; routers never touch the session | Analytics routers stay thin and resolve a service through a dependency — this matches §21 of the directive exactly |
 | D-002 | **Synchronous** SQLAlchemy 2.x with psycopg 3 (no `AsyncSession`) | Analytics services and repositories are sync; no `async def` endpoints that touch the DB |
 | D-003 | **Services own transactions; repositories never commit** | Analytics is read-mostly, so commit only in intervention services; `recompute` must not commit on its own — it runs inside the caller's transaction (see C4 note below) |
 | D-004 | PostgreSQL only, **including tests**; test DB built by running Alembic migrations, never `create_all` | Analytics tests that need the DB use the `db_session` fixture; pure-function tests need no DB at all |
 | D-005 | Fixed constraint naming convention on `Base.metadata` | Error handling may rely on predictable constraint names |
-| D-006 | **Migration drift is a test failure** (`tests/test_migrations.py` asserts a single head, a full down/up round trip, and zero model/schema diff) | Agent 2 authors its own migrations as the next sequential ID in the single chain, and must never add a model without one — the suite fails loudly on drift or on a second head |
+| D-006 | **Migration drift is a test failure** (`tests/test_migrations.py` asserts a single head, a full down/up round trip, and zero model/schema diff) | Analytics layer authors its own migrations as the next sequential ID in the single chain, and must never add a model without one — the suite fails loudly on drift or on a second head |
 | D-007 | `/health` is unversioned and reports readiness | Analytics endpoints all live under `/api/v1` |
 | D-008 | The API container runs `alembic upgrade head` before uvicorn | No manual migration step in local dev |
 
-**Consequence for contract C4:** because services own the transaction (D-003), `recompute(session, assessment_id)` receives the caller's session and must **not** commit. Agent 1's import-confirm service commits once, so the results write and the recomputed flags land atomically.
+**Consequence for contract C4:** because services own the transaction (D-003), `recompute(session, assessment_id)` receives the caller's session and must **not** commit. Platform layer's import-confirm service commits once, so the results write and the recomputed flags land atomically.
 
 ### Runtime decisions
 
 - **Compute on write, not on read.** After an import confirm or a results edit, recompute derived rows for that assessment and re-evaluate attention flags for that offering. Dashboards then read small tables. At our scale this is sub-second — hence no queue. This makes the write path depend on the analytics layer: contract **C4** in §7.
-- **Migrations:** Alembic, single owner (Agent 1).
+- **Migrations:** Alembic, single owner (Platform layer).
 - **Contracts:** the FastAPI-generated OpenAPI document at `/docs` is the published interface.
 
 ---
 
-## 5. Agent 1 — Backend Platform & Data
+## 5. Platform layer — Backend Platform & Data
 
-**The question Agent 1 answers:** *"How do we store and safely access academic data?"*
+**The question Platform layer answers:** *"How do we store and safely access academic data?"*
 
-Agent 1 owns the source-of-truth academic data layer and must expose clean models, repositories, services and API contracts for Agent 2 to consume.
+Platform layer owns the source-of-truth academic data layer and must expose clean models, repositories, services and API contracts for Analytics layer to consume.
 
 | Group | Responsibilities |
 |-------|------------------|
@@ -217,19 +217,19 @@ Agent 1 owns the source-of-truth academic data layer and must expose clean model
 | Ingestion | File detection, parsing, column mapping, normalisation, validation, staging, preview, row fix/exclude, re-validation, **atomic confirm** |
 | Integrity | Import history, audit logs, duplicate-import handling, transactional guarantees |
 | Infrastructure | Docker/compose development environment, test infrastructure, seed/demo data |
-| Documentation | `docs/DATA_MODEL.md`, `docs/IMPORT_FORMAT.md`, `docs/AGENT_2_ANALYTICS_CONTRACT.md` |
+| Documentation | `docs/DATA_MODEL.md`, `docs/IMPORT_FORMAT.md`, `docs/ANALYTICS_CONTRACT.md` |
 
-**Agent 1 must not** implement analytics formulas, attention rules, trend classification, segmentation, insight generation, intervention outcome maths, or report layout.
+**Platform layer must not** implement analytics formulas, attention rules, trend classification, segmentation, insight generation, intervention outcome maths, or report layout.
 
-**Blueprint mapping:** Agent 1 ≈ blueprint members **M1 (Platform & Foundation) + M2 (Assessments & Data Ingestion)**, minus M2's question/topic work and minus all frontend.
+**Blueprint mapping:** Platform layer ≈ blueprint members **M1 (Platform & Foundation) + M2 (Assessments & Data Ingestion)**, minus M2's question/topic work and minus all frontend.
 
 ---
 
-## 6. Agent 2 — Analytics, Intelligence, Interventions & Reporting
+## 6. Analytics layer — Analytics, Intelligence, Interventions & Reporting
 
-**The question Agent 2 answers:** *"What can we reliably understand from that academic data?"*
+**The question Analytics layer answers:** *"What can we reliably understand from that academic data?"*
 
-Agent 2 is the **correctness owner** for every number and label the system shows.
+Analytics layer is the **correctness owner** for every number and label the system shows.
 
 | Group | Responsibilities |
 |-------|------------------|
@@ -246,30 +246,30 @@ Agent 2 is the **correctness owner** for every number and label the system shows
 | APIs | All `/api/v1/analytics/*`, `/interventions/*`, `/reports/*` routers (thin) |
 | Quality | Analytics unit tests against hand-computed fixtures, edge-case tests, performance tests, `docs/ANALYTICS_SPEC.md` |
 
-**Agent 2 must not** create or edit SQLAlchemy models, write Alembic migrations, modify auth/RBAC, own import parsing/validation, bypass repositories, or duplicate the source of truth. Changes needed in Agent 1's layer go through the protocol in `docs/TEAM_OWNERSHIP.md` §4.
+**Analytics layer must not** create or edit SQLAlchemy models, write Alembic migrations, modify auth/RBAC, own import parsing/validation, bypass repositories, or duplicate the source of truth. Changes needed in the platform layer go through the protocol in `docs/LAYER_OWNERSHIP.md` §4.
 
-**Blueprint mapping:** Agent 2 ≈ blueprint members **M3 (Analytics & Insights) + the backend half of M4 (interventions, reports)**, minus the copilot and all frontend.
+**Blueprint mapping:** Analytics layer ≈ blueprint members **M3 (Analytics & Insights) + the backend half of M4 (interventions, reports)**, minus the copilot and all frontend.
 
 ---
 
 ## 7. Shared Contracts
 
-These are the interfaces across the ownership boundary. **Agent 1 provides; Agent 2 consumes.** Neither may change one unilaterally.
+These are the interfaces across the ownership boundary. **Platform layer provides; Analytics layer consumes.** Neither may change one unilaterally.
 
 | ID | Contract | Provider | Notes |
 |----|----------|----------|-------|
-| **C1** | Shared enums | Agent 1 for platform enums; Agent 2 for intelligence enums | **No `app/core/enums.py` exists** — `Role` (`ADMIN`, `HOD`, `FACULTY`) lives with the users model. Platform enums (`AssessmentType`, `ResultStatus`) are Agent 1's and Agent 2 imports them, never redefines them. Intelligence enums (`AttentionRuleCode`, `FlagSeverity`, `FlagStatus`, `SegmentLabel`, `TrendLabel`) are Agent 2's, defined in the module that owns them under `app/modules/`. **Open question for Agent 1:** whether to introduce a shared `core/enums.py` or keep enums beside their models. |
-| **C2** | `ResultStatus` enum + the missing-data policy of §3 | Agent 1 stores | Agent 2 applies it identically in every formula. |
-| **C3** | Analytics read interface (platform service/repository methods Agent 2 may call) | Agent 1 | **Due in Agent 1's Phase 7** ("audit, seed data, analytics data contract"). README rule 4 already binds Agent 2: read academic data through platform services/repositories, never by ad-hoc queries on platform tables; data that is missing is requested as a platform service method. |
-| **C4** | `recompute(session, assessment_id)` hook | signature agreed jointly; **implemented by Agent 2**, **called by Agent 1** | The hard handoff. Agent 1 calls it inside the import-confirm transaction and after a results edit. Agent 1 ships a no-op stub on day one so the write path is never blocked on analytics. |
-| **C5** | Threshold resolution order | Agent 1 stores, Agent 2 resolves | `course_offerings.config` (JSONB) → `settings` row for the department → hard-coded default. Agent 2 owns the key names and the resolver; Agent 1 owns the storage. |
-| **C6** | Auth dependencies — **DELIVERED (Phase 2):** `require_roles(...)` and `CurrentUser` in `app.modules.auth.dependencies`. Roles are `ADMIN`, `HOD`, `FACULTY`. The role in the JWT is never trusted; every request re-reads the user, so deactivation and role changes apply immediately. | Agent 1 | Agent 2 applies them to every analytics/intervention/report route — no analytics endpoint may be unscoped. **Offering scope was delivered in Phase 3** (`app/modules/organization/scope.py`): `OfferingAccess` (VIEW / ADMINISTER), `visible_offerings` / `visible_offering_ids`; an out-of-scope offering returns **404**, a visible-but-not-administrable one returns **403**. Agent 2 must route every offering-scoped analytic through these helpers rather than re-deriving visibility. |
-| **C7** | Error envelope — **DELIVERED (Phase 2):** `{"error": {"code", "message", "details"}}`, `details` carrying field/row/cell items. Codes are **lower_snake_case**: `not_authenticated` 401, `permission_denied` 403, `not_found` 404, `conflict` 409, `validation_error` / `business_rule_violation` 422. | Agent 1 (`app/core/errors.py`) | Agent 2 raises the same shape. *Corrects an earlier assumption in this document that codes were SCREAMING_SNAKE.* An insufficient-data condition is **not** an error — it is a 200 response shaped per C10. |
-| **C8** | List envelope — **DELIVERED (Phase 2):** `{items, total, limit, offset}`, `limit` 1–200 default 50. IDs are UUIDs. | Agent 1 (`app/core/pagination.py`) | Used by every paginated analytics list. *Corrects an earlier assumption in this document of `{items, total, page, size}` with `?page=&size=`.* |
-| **C9** | Attention rule registry: canonical `rule_code`, severity, threshold key, and the settings keys behind them | Agent 2 defines, Agent 1 stores | Must be fixed **before** either agent writes rule code — see CONFLICT-2 in §11. |
-| **C10** | Insufficient-data / null-value response shape | Agent 2 defines | Proposed: `{"value": null, "status": "insufficient_data", "reason": "only 1 completed assessment (minimum 2)", "n": 1}`. Numeric fields are `null` + a status, never `NaN`, never a fabricated `0`. |
-| **C11** | Seed/demo dataset with known embedded patterns | Agent 1 | Must contain: declining students, at least one sharp drop, a borderline cluster around the pass mark, absent and exempt rows, a student with a single assessment, and a very small cohort. Agent 2's tests and demo depend on these patterns being stable. |
-| **C12** | Audit log write on any overwrite of existing results | Agent 1 | Old values preserved; Agent 2's outcome measurement must never silently read over-written history. |
+| **C1** | Shared enums | Platform layer for platform enums; Analytics layer for intelligence enums | **No `app/core/enums.py` exists** — `Role` (`ADMIN`, `HOD`, `FACULTY`) lives with the users model. Platform enums (`AssessmentType`, `ResultStatus`) are Platform layer's and Analytics layer imports them, never redefines them. Intelligence enums (`AttentionRuleCode`, `FlagSeverity`, `FlagStatus`, `SegmentLabel`, `TrendLabel`) are Analytics layer's, defined in the module that owns them under `app/modules/`. **Open question for Platform layer:** whether to introduce a shared `core/enums.py` or keep enums beside their models. |
+| **C2** | `ResultStatus` enum + the missing-data policy of §3 | Platform layer stores | Analytics layer applies it identically in every formula. |
+| **C3** | Analytics read interface (platform service/repository methods Analytics layer may call) | Platform layer | **Due in Platform layer's Phase 7** ("audit, seed data, analytics data contract"). README rule 4 already binds Analytics layer: read academic data through platform services/repositories, never by ad-hoc queries on platform tables; data that is missing is requested as a platform service method. |
+| **C4** | `recompute(session, assessment_id)` hook | signature agreed jointly; **implemented by Analytics layer**, **called by Platform layer** | The hard handoff. Platform layer calls it inside the import-confirm transaction and after a results edit. Platform layer ships a no-op stub on day one so the write path is never blocked on analytics. |
+| **C5** | Threshold resolution order | Platform layer stores, Analytics layer resolves | `course_offerings.config` (JSONB) → `settings` row for the department → hard-coded default. Analytics layer owns the key names and the resolver; Platform layer owns the storage. |
+| **C6** | Auth dependencies — **DELIVERED (Phase 2):** `require_roles(...)` and `CurrentUser` in `app.modules.auth.dependencies`. Roles are `ADMIN`, `HOD`, `FACULTY`. The role in the JWT is never trusted; every request re-reads the user, so deactivation and role changes apply immediately. | Platform layer | Analytics layer applies them to every analytics/intervention/report route — no analytics endpoint may be unscoped. **Offering scope was delivered in Phase 3** (`app/modules/organization/scope.py`): `OfferingAccess` (VIEW / ADMINISTER), `visible_offerings` / `visible_offering_ids`; an out-of-scope offering returns **404**, a visible-but-not-administrable one returns **403**. Analytics layer must route every offering-scoped analytic through these helpers rather than re-deriving visibility. |
+| **C7** | Error envelope — **DELIVERED (Phase 2):** `{"error": {"code", "message", "details"}}`, `details` carrying field/row/cell items. Codes are **lower_snake_case**: `not_authenticated` 401, `permission_denied` 403, `not_found` 404, `conflict` 409, `validation_error` / `business_rule_violation` 422. | Platform layer (`app/core/errors.py`) | Analytics layer raises the same shape. *Corrects an earlier assumption in this document that codes were SCREAMING_SNAKE.* An insufficient-data condition is **not** an error — it is a 200 response shaped per C10. |
+| **C8** | List envelope — **DELIVERED (Phase 2):** `{items, total, limit, offset}`, `limit` 1–200 default 50. IDs are UUIDs. | Platform layer (`app/core/pagination.py`) | Used by every paginated analytics list. *Corrects an earlier assumption in this document of `{items, total, page, size}` with `?page=&size=`.* |
+| **C9** | Attention rule registry: canonical `rule_code`, severity, threshold key, and the settings keys behind them | Analytics layer defines, Platform layer stores | Must be fixed **before** either agent writes rule code — see CONFLICT-2 in §11. |
+| **C10** | Insufficient-data / null-value response shape | Analytics layer defines | Proposed: `{"value": null, "status": "insufficient_data", "reason": "only 1 completed assessment (minimum 2)", "n": 1}`. Numeric fields are `null` + a status, never `NaN`, never a fabricated `0`. |
+| **C11** | Seed/demo dataset with known embedded patterns | Platform layer | Must contain: declining students, at least one sharp drop, a borderline cluster around the pass mark, absent and exempt rows, a student with a single assessment, and a very small cohort. Analytics layer's tests and demo depend on these patterns being stable. |
+| **C12** | Audit log write on any overwrite of existing results | Platform layer | Old values preserved; Analytics layer's outcome measurement must never silently read over-written history. |
 
 ---
 
@@ -317,7 +317,7 @@ Excel / CSV
 
 Base path `/api/v1`. Every endpoint except `login`, `refresh` and `health` requires a Bearer token. Faculty may touch **only** offerings they teach; admin may touch all (per RBAC).
 
-### Agent 1 owns
+### Platform layer owns
 
 ```
 POST   /auth/login | /auth/refresh | /auth/logout      GET /auth/me
@@ -333,11 +333,11 @@ POST   /assessments/{id}/import             (parse + validate, writes nothing to
 PATCH  /imports/{batch_id}/rows             POST /imports/{batch_id}/confirm
 GET    /imports                             (history)
 POST   /students/import  (+ /confirm)
-POST   /admin/recompute?offering_id=        (route: Agent 1; body of work: Agent 2 via C4)
+POST   /admin/recompute?offering_id=        (route: Platform layer; body of work: Analytics layer via C4)
 GET    /health
 ```
 
-### Agent 2 owns
+### Analytics layer owns
 
 ```
 GET    /analytics/dashboard?offering_id=
@@ -358,8 +358,8 @@ GET    /reports/{type}/{id}?format=pdf|xlsx|csv         (type in: section, asses
 **Boundary rules**
 
 - Analytics routers are thin: `router -> service -> analytics engine -> repository -> DB`.
-- Agent 2 does not add write endpoints outside `interventions/`.
-- Agent 1 does not add endpoints under `/analytics/`.
+- Analytics layer does not add write endpoints outside `interventions/`.
+- Platform layer does not add endpoints under `/analytics/`.
 - Both use C7 (errors), C8 (pagination) and C6 (auth dependencies).
 
 ---
@@ -443,8 +443,8 @@ Display text must read like: *"Latest assessment 42%. Configured low-performance
 | **CONFLICT-3** | Blueprint's intervention model hangs interventions off a `topic_id`, and its outcome maths compares topic scores, requiring the follow-up assessment to contain a question mapped to that topic. | `topic_id` is removed. Outcome compares **assessment percentages** between a baseline assessment (set) and a follow-up assessment, for students with data in both. |
 | **CONFLICT-4** | Blueprint's generated insight sentence is topic-based (*"strong in X, needs practice in Y"*, strong = topic score ≥ 75, weak < 50). | Redesigned onto assessment-level facts: class-mean movement, decline counts, borderline counts, completion. Templates must be rewritten, not ported. |
 | **CONFLICT-5** | Blueprint has 22 tables including `topics`, `questions`, `question_topics`, `marks`, `student_topic_summary`. | Those five are **not created**. Reduced set: 16 tables (+1 optional `grading_schemes`). See §12. |
-| **CONFLICT-6** | Blueprint assumes 4 members each owning backend + frontend of a vertical slice. | Two backend agents, no frontend. Mapping in §5 and §6. |
-| **CONFLICT-7** | Blueprint's grade bands / `grading_schemes` and grade distribution depend on a configured scheme not mentioned in the reduced scope. | Deferred as optional. If grades are wanted, storage is Agent 1 (`grading_schemes` or `offering.config`) and the distribution is Agent 2. Flagged as **DECISION-3**. |
+| **CONFLICT-6** | Blueprint assumes 4 members each owning backend + frontend of a vertical slice. | Two backend layers, no frontend. Mapping in §5 and §6. |
+| **CONFLICT-7** | Blueprint's grade bands / `grading_schemes` and grade distribution depend on a configured scheme not mentioned in the reduced scope. | Deferred as optional. If grades are wanted, storage is Platform layer (`grading_schemes` or `offering.config`) and the distribution is Analytics layer. Flagged as **DECISION-3**. |
 
 **No question/topic functionality is currently being treated as required.** The only place the blueprint made it structurally mandatory was the `marks`-via-`question_id` key, which DECISION-1 removes.
 
@@ -479,13 +479,13 @@ Original options, retained for the record:
 
 **Option B was rejected.**
 
-**DECISION-2 — RESOLVED by Agent 1's Phase 1: Python 3.12.** `backend/Dockerfile` uses `python:3.12-slim`; `pyproject.toml` declares `requires-python = ">=3.11"` and ruff targets `py311`. The local host interpreter is **3.14.6**, which is *not* what the project runs on — **run tests and the app in the container**, or install 3.12 locally, rather than using the host interpreter. Verified: the Phase 1 suite passes 9/9 on `python:3.12-slim`.
+**DECISION-2 — RESOLVED by Platform layer's Phase 1: Python 3.12.** `backend/Dockerfile` uses `python:3.12-slim`; `pyproject.toml` declares `requires-python = ">=3.11"` and ruff targets `py311`. The local host interpreter is **3.14.6**, which is *not* what the project runs on — **run tests and the app in the container**, or install 3.12 locally, rather than using the host interpreter. Verified: the Phase 1 suite passes 9/9 on `python:3.12-slim`.
 
 **DECISION-3 (open) — grades.** In or out for this phase? (CONFLICT-7.)
 
 **DECISION-4 (open) — PDF engine.** The blueprint chose WeasyPrint, which needs native GTK/Pango libraries and is painful on Windows hosts. Options: generate PDFs inside the Linux container only, or choose a pure-Python engine (ReportLab). See RISK-6.
 
-### What Agent 2 needs from Agent 1 (requests, never silent edits)
+### What Analytics layer needs from Platform layer (requests, never silent edits)
 
 | ID | Requirement | Why |
 |----|-------------|-----|
@@ -493,21 +493,21 @@ Original options, retained for the record:
 | **D2** | `assessment_results`: nullable `score` + `status` enum | Missing-data policy (§3); absent must never arrive as 0 |
 | **D3** | `course_offerings`: `pass_percent` + `config` JSONB | Pass mark and threshold overrides must not be hard-coded |
 | **D4** | `settings` table, department-scoped, key + JSONB value | Department-level threshold defaults (C5) |
-| **D5** | `interventions` + `intervention_students` tables | Shared contract: Agent 1 migrates, Agent 2 defines fields and all logic |
+| **D5** | `interventions` + `intervention_students` tables | Shared contract: Platform layer migrates, Analytics layer defines fields and all logic |
 | **D6** | `attention_flags` table with `rule_code`, `severity`, `threshold`, `actual_value`, `message`, `status`, `computed_at` | Flags are persisted so history survives recompute |
 | **D7** | `recompute(session, assessment_id)` called inside the import-confirm transaction and after `PUT /assessments/{id}/results` | Compute-on-write (C4) |
 | **D8** | A cohort read method: active enrolled students for an offering, with each student's results across published assessments | Every group statistic needs a stable definition of "enrolled" |
 | **D9** | Indexes: `assessment_results(assessment_id)`, `assessment_results(student_id)`, `assessments(offering_id, sequence_no)`, `attention_flags(offering_id, status)` | Dashboard latency target |
 | **D10** | Audit rows whenever existing results are overwritten | Outcome measurement must not silently read rewritten history (C12) |
-| **D11** | Seed dataset with the patterns listed in C11 | Agent 2 cannot build or test anything without data |
+| **D11** | Seed dataset with the patterns listed in C11 | Analytics layer cannot build or test anything without data |
 
-### What Agent 1 needs from Agent 2
+### What Platform layer needs from Analytics layer
 
 | ID | Requirement | Why |
 |----|-------------|-----|
 | **U1** | The `recompute(session, assessment_id)` signature, agreed on day one and shipped as a no-op stub | The import write path must never block on analytics being finished |
-| **U2** | The frozen attention rule registry (C9) and settings key names | Agent 1 stores the threshold values Agent 2 will read |
-| **U3** | The insufficient-data response shape (C10) | Keeps error/empty semantics consistent across both agents' APIs |
+| **U2** | The frozen attention rule registry (C9) and settings key names | Platform layer stores the threshold values Analytics layer will read |
+| **U3** | The insufficient-data response shape (C10) | Keeps error/empty semantics consistent across both layers' APIs |
 
 ---
 
@@ -515,7 +515,7 @@ Original options, retained for the record:
 
 | ID | Risk | Severity | Mitigation |
 |----|------|----------|------------|
-| **RISK-1** | **RESOLVED 2026-09-26.** The local working copy was empty, but Agent 1 had already pushed Phase 1 (backend skeleton) to `YushBytes/Faculty-Project`. The risk of both agents bootstrapping the foundation in parallel is gone. | ~~High~~ | Agent 1's structure and conventions are authoritative (§4). Agent 2 still has no models or seed data to consume, so its only unblocked work remains the pure, database-free analytics core plus fixtures. **Always `git fetch` and inspect `origin/main` before starting a phase** — the local folder is not evidence of what the shared repo contains. |
+| **RISK-1** | **RESOLVED 2026-09-26.** The local working copy was empty, but Platform layer had already pushed Phase 1 (backend skeleton) to `YushBytes/Faculty-Project`. The risk of both layers bootstrapping the foundation in parallel is gone. | ~~High~~ | Platform layer's structure and conventions are authoritative (§4). Analytics layer still has no models or seed data to consume, so its only unblocked work remains the pure, database-free analytics core plus fixtures. **Always `git fetch` and inspect `origin/main` before starting a phase** — the local folder is not evidence of what the shared repo contains. |
 | **RISK-16** | The GitHub repository `YushBytes/Faculty-Project` is **public**. The system is designed to hold student register numbers, names and marks — personal data the blueprint itself commits to handling under the spirit of India's DPDP Act 2023. | Medium now, **High** once real data exists | Never commit real student data, real sheets, or a populated dump. Seed/demo data must be synthetic. Consider making the repository private before any real import fixture is added. |
 | **RISK-2** | **RESOLVED 2026-09-26.** The git repository was rooted at `C:\Users\ayush\OneDrive\Desktop`, not at the project folder — 77 untracked entries (resumes, CVs, personal PDFs, other projects, game shortcuts), no `.gitignore`, zero commits. A single `git add -A && git commit` would have committed personal documents into project history. | ~~High~~ | A git repository was initialised inside `Faculty project/` (branch `main`) with a `.gitignore`, so git commands run from the project now target the project repo only. **Never run `git add`/`git commit` from the Desktop root.** The Desktop repo still exists with 77 untracked entries and no `.gitignore` — worth cleaning up separately. |
 | **RISK-3** | Project lives inside **OneDrive**. Sync will fight a `.venv`, `__pycache__`, and any Postgres data directory — file locks, sync conflicts, corrupted virtualenvs. | High — **still open** | `.gitignore` now excludes `.venv/`, `__pycache__/`, `pgdata/` from *git*, but that does not stop OneDrive syncing them. Either exclude those paths from OneDrive sync, or move the repository outside OneDrive. Keep Postgres data in a Docker volume, never in a synced folder. |
@@ -523,51 +523,51 @@ Original options, retained for the record:
 | **RISK-5** | **Mitigated.** No local PostgreSQL server or `psql` client, but `docker-compose.yml` provides `postgres:16-alpine`. | Low | `docker compose up -d db`. **Host port 5432 and 5433 are already taken on this machine by an unrelated project's containers (WhistleDrop), which auto-start with Docker Desktop.** Override the published port instead of stopping them: `POSTGRES_PORT=55432 docker compose up -d db`, and point `TEST_DATABASE_URL` at that port (or run the test container on the `facultyproject_default` network and use host `db:5432`). |
 | **RISK-6** | WeasyPrint (blueprint's PDF choice) requires native GTK/Pango libraries; on a Windows host this typically blocks PDF generation entirely. | Medium | DECISION-4: render PDFs only inside the Linux container, or use ReportLab. |
 | **RISK-7** | **Scope creep back into question/topic analytics.** The blueprint is detailed and persuasive on topic analytics and discrimination index; it is easy to implement them by habit. | Medium-High | §11 exclusion list is binding. Add a guard test asserting no `questions` / `topics` / `question_topics` / `marks` / `student_topic_summary` table exists in the migration head. |
-| **RISK-8** | **Rule-code divergence** (CONFLICT-2): two documents number the same rules differently, so the two agents could persist mismatched `rule_code` values. | High | Freeze C9 before any rule code is written; the codes live in one module (`app/core/enums.py`) owned by Agent 1 but authored by Agent 2. |
+| **RISK-8** | **Rule-code divergence** (CONFLICT-2): two documents number the same rules differently, so the two layers could persist mismatched `rule_code` values. | High | Freeze C9 before any rule code is written; the codes live in one module (`app/core/enums.py`) owned by Platform layer but authored by Analytics layer. |
 | **RISK-9** | **Absent silently becoming 0** through pandas (`NaN` then `fillna(0)`), or through a default-0 column. | High | `score` is nullable with no default; parse every cell as a string; explicit test: blank cell imports as `absent` with `score IS NULL`. |
 | **RISK-10** | Comparing raw percentages across assessments ignores differing difficulty: a hard CT2 makes the whole class look like it is declining. | Medium | State the caveat in every trend/comparison response and report. (Blueprint's z-score refinement is V2 and out of scope now.) |
 | **RISK-11** | Duplicate imports silently overwriting results. | Medium | Warning-level validation ("62 existing results will be updated"), explicit confirm, and audit rows (C12). |
-| **RISK-12** | Two agents creating Alembic revisions in parallel produces multiple heads. | Medium | Agent 1 is the sole migration author; Agent 2 requests changes via §12. |
-| **RISK-13** | No `CLAUDE.md`, so conventions drift between the two agents. | Medium | Create `CLAUDE.md` immediately after the skeleton: layout, naming, error envelope, test commands, ownership boundary. |
+| **RISK-12** | Two layers creating Alembic revisions in parallel produces multiple heads. | Medium | Platform layer is the sole migration author; Analytics layer requests changes via §12. |
+| **RISK-13** | No `CLAUDE.md`, so conventions drift between the two layers. | Medium | Create `CLAUDE.md` immediately after the skeleton: layout, naming, error envelope, test commands, ownership boundary. |
 | **RISK-14** | Misleading labels on very small cohorts (n < 5) or single-assessment students. | Medium | One central insufficient-data gate (C10) applied by every analytic; tested with 0-, 1-, 2-student and single-assessment fixtures. |
-| **RISK-15** | **RESOLVED 2026-09-26.** The 50-page blueprint lived only on the Desktop, outside the repository. Agent 1 recorded in `docs/DECISIONS.md` that *"the Blueprint and the Agent 1 work package were not available when the backend was started"* and that the Blueprint wins wherever it conflicts with an entry there. | ~~Low-Medium~~ | The blueprint is now committed at `docs/reference/ACADLYTICS_Project_Blueprint.pdf`, with a machine-readable `.extracted.txt` beside it (the host has no `pdftoppm`/`pypdf`, so the text form is what agents can actually grep). **Action for Agent 1:** re-check D-001…D-008 against it and revise any entry it contradicts. |
+| **RISK-15** | **RESOLVED 2026-09-26.** The 50-page blueprint lived only on the Desktop, outside the repository. Platform layer recorded in `docs/DECISIONS.md` that *"the Blueprint and the Platform layer work package were not available when the backend was started"* and that the Blueprint wins wherever it conflicts with an entry there. | ~~Low-Medium~~ | The blueprint is now committed at `docs/reference/ACADLYTICS_Project_Blueprint.pdf`, with a machine-readable `.extracted.txt` beside it (the host has no `pdftoppm`/`pypdf`, so the text form is what layers can actually grep). **Action for Platform layer:** re-check D-001…D-008 against it and revise any entry it contradicts. |
 
 ---
 
 ## 14. Recommended Implementation Order
 
-Sequenced so that Agent 2 is unblocked as early as possible while Agent 1 still owns the foundation.
+Sequenced so that Analytics layer is unblocked as early as possible while Platform layer still owns the foundation.
 
 **Phase 0 — Environment and hygiene (blocking, no application code) — PARTLY DONE 2026-09-26**
 Done: git repository initialised in the project folder with a `.gitignore` (RISK-2); blueprint copied to `docs/reference/`; DECISION-1 settled (Option A).
 Still open: RISK-3 (OneDrive sync of `.venv` / Docker volumes), DECISION-2 (Python version pin), DECISION-3 (grades), DECISION-4 (PDF engine).
 
-**Phase 1 — Skeleton and foundation (Agent 1) — DONE**, commit `433c7d9`, 9/9 tests passing.
+**Phase 1 — Skeleton and foundation (Platform layer) — DONE**, commit `433c7d9`, 9/9 tests passing.
 Delivered: `backend/` package, `pyproject.toml`, `Settings` with a psycopg-only `DATABASE_URL` validator, `db/base.py` + `db/session.py`, Alembic baseline `0001`, `/health` readiness endpoint, `docker-compose.yml` (Postgres 16 + api), pytest harness on real PostgreSQL, ruff config, `README.md`, `docs/DECISIONS.md`.
-Not yet delivered (still blocks Agent 2): the error envelope (C7), pagination (C8) and `enums.py` (C1) are not present in Phase 1 and are expected with the domain modules.
+Not yet delivered (still blocks Analytics layer): the error envelope (C7), pagination (C8) and `enums.py` (C1) are not present in Phase 1 and are expected with the domain modules.
 
-**Phase 2 — Users, auth and RBAC (Agent 1) — DONE**, commit `a34308f`.
+**Phase 2 — Users, auth and RBAC (Platform layer) — DONE**, commit `a34308f`.
 Delivered: `users` + `refresh_tokens` (migration `0002`), Argon2id passwords, JWT access (15 min) + rotating refresh tokens (7 days) with reuse/theft detection, `/auth` login/refresh/logout/me, `/users` admin CRUD with last-admin and self-lockout guards, roles `ADMIN`/`HOD`/`FACULTY` re-read from the database on every request, the unified error envelope (C7), pagination (C8), and a `create-admin` CLI. A per-agent file split shipped in this commit was removed again in `e2963ea` in favour of a single module tree (see §4).
-Still outstanding from the original Phase 2 scope: the **academic** data model (offerings, students, assessments, `assessment_results`) is Agent 1's Phases 3–5, and **department/offering scope** lands in Phase 3.
+Still outstanding from the original Phase 2 scope: the **academic** data model (offerings, students, assessments, `assessment_results`) is Platform layer's Phases 3–5, and **department/offering scope** lands in Phase 3.
 
-**Phase 3 (Agent 1's numbering) — Organisation and offering scope — DONE**, commit `a1f8125`.
+**Phase 3 (Platform layer's numbering) — Organisation and offering scope — DONE**, commit `a1f8125`.
 Delivered: departments, academic terms, courses, sections, course offerings with faculty assignment (migration `0003`); `users.department_id`; a single-current-term partial unique index; code/date/pass-mark check constraints; server-side offering scope; a `write_guard` mapping constraint violations to 409/422 while keeping the session usable. 143 tests. This satisfies dependency **D3** (offering `pass_percent`) and contract **C6**'s scope half.
 
-**Phase 3 (this document's numbering) — Seed data + the recompute stub (Agent 1, unblocks Agent 2)**
-Seed/demo generator with the C11 patterns; the no-op `recompute(session, assessment_id)` stub (U1); `docs/DATA_MODEL.md` and `docs/AGENT_2_ANALYTICS_CONTRACT.md`. **This phase is the gate for Agent 2 starting.**
+**Phase 3 (this document's numbering) — Seed data + the recompute stub (Platform layer, unblocks Analytics layer)**
+Seed/demo generator with the C11 patterns; the no-op `recompute(session, assessment_id)` stub (U1); `docs/DATA_MODEL.md` and `docs/ANALYTICS_CONTRACT.md`. **This phase is the gate for Analytics layer starting.**
 
 **Phase 4 — Two tracks in parallel**
 
-- *4a, Agent 1:* academic structure CRUD, students, assessments, `GET/PUT /assessments/{id}/results`, then the import engine (parse → validate → stage → preview → fix/exclude → atomic confirm → audit) with fixture-driven validation tests and `docs/IMPORT_FORMAT.md`.
-- *4b, Agent 2:* pure analytics functions with **no database** — percentages, weighted score, group statistics, histogram, trend, decline, consistency — each proved against a hand-computed fixture; plus the C9 rule registry and the C10 insufficient-data shape.
+- *4a, Platform layer:* academic structure CRUD, students, assessments, `GET/PUT /assessments/{id}/results`, then the import engine (parse → validate → stage → preview → fix/exclude → atomic confirm → audit) with fixture-driven validation tests and `docs/IMPORT_FORMAT.md`.
+- *4b, Analytics layer:* pure analytics functions with **no database** — percentages, weighted score, group statistics, histogram, trend, decline, consistency — each proved against a hand-computed fixture; plus the C9 rule registry and the C10 insufficient-data shape.
 
-**Phase 5 — Analytics services and APIs (Agent 2)**
+**Phase 5 — Analytics services and APIs (Analytics layer)**
 Repository-backed services over real seeded data, the real `recompute` implementation behind C4, attention rule engine, segmentation, class health, assessment comparison, what-changed, deterministic insights, and all `/analytics/*` routes with C6 scope enforcement.
 
-**Phase 6 — Interventions and outcomes (Agent 2, on D5)**
+**Phase 6 — Interventions and outcomes (Analytics layer, on D5)**
 Intervention CRUD, target-group selection, observed pre/post measurement against the peer baseline, with `n` and the observational caveat in every response.
 
-**Phase 7 — Reports (Agent 2, after DECISION-4)**
+**Phase 7 — Reports (Analytics layer, after DECISION-4)**
 CSV → XLSX → PDF, in that order of difficulty, all reading the same analytics engine.
 
 **Phase 8 — Integration and hardening (both)**
@@ -576,5 +576,5 @@ Cross-boundary integration tests (import → recompute → flags → interventio
 **Ordering rules**
 
 - Nothing in Phases 4b onward may start before Phase 3 exists.
-- Agent 2 never waits for the import engine: seed data is the substitute.
+- Analytics layer never waits for the import engine: seed data is the substitute.
 - The `recompute` signature is agreed in Phase 1, stubbed in Phase 3, implemented in Phase 5.

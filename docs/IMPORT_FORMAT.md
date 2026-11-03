@@ -1,6 +1,6 @@
 # ACADLYTICS — Import Format
 
-How marks get from a faculty spreadsheet into `assessment_results`. Owner: Agent 1.
+How marks get from a faculty spreadsheet into `assessment_results`. Owner: Platform layer.
 Implementation: `backend/app/modules/imports/` (engine: `validation.py`, a pure function).
 
 ## Workflow

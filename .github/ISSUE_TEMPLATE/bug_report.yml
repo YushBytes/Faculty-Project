@@ -1,0 +1,81 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For anything security-related — a role seeing data outside its scope, a session or token
+        problem, an import that writes without confirming — please use private vulnerability
+        reporting instead (**Security → Report a vulnerability**). See
+        [SECURITY.md](https://github.com/YushBytes/Faculty-Project/blob/main/SECURITY.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - TLP import / set-up from reports
+        - Analytics and aggregate views
+        - Attention rules
+        - Interventions
+        - Reports and exports
+        - Roles, access and scope
+        - Administration (departments, terms, courses, sections, users)
+        - Web app (layout, navigation, forms)
+        - Running it (Docker, migrations, environment)
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the application did.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Include the role you were signed in as. If an upload is involved, say which format
+        (xlsx, csv, TLP pdf) and whether the file named its section.
+      placeholder: |
+        1. Sign in as a Course Coordinator
+        2. Open Import, upload one FJ-II report for section A1
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: How you are running it, and anything non-default.
+      placeholder: |
+        Docker Compose / local dev
+        Browser, if the problem is in the web app
+        Non-default ports or settings in .env
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: |
+        API logs (`docker compose logs api`), a browser console error, or a failing test name.
+        Please remove any real student data.
+      render: text
+    validations:
+      required: false
