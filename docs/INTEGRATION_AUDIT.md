@@ -1,6 +1,6 @@
 # Web app ↔ API integration
 
-State on 2026-11-14 (branch `release/local-rc`). The web app has no mock layer: there is no mock
+State on 2026-11-14 (branch `backend`). The web app has no mock layer: there is no mock
 client, no fixture file and no fallback data anywhere under `frontend/`. Every number on every
 page is a field of a backend response.
 

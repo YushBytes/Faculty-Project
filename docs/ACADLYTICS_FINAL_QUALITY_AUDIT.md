@@ -1,6 +1,6 @@
 # ACADLYTICS — final quality audit, local release candidate
 
-Date: 2026-11-14. Branch: `release/local-rc` (from `main` at `07e5258`). Machine: Windows 11,
+Date: 2026-11-14. Branch: `backend` (on top of `e81ec65`). Machine: Windows 11,
 Docker Desktop 29.8, PostgreSQL 16 (container), Python 3.12, Node 24.
 
 Every result below was observed on that date. Where something was not checked, it says so.
@@ -271,7 +271,9 @@ were running before and after and were not touched.
 
 ## 21. Git
 
-Branch `release/local-rc`, created from `main` (`07e5258`); `main` was not modified. Commits:
-the application changes, then the documentation. Not pushed: `origin` has no `release/local-rc`
-until the owner pushes it. `git status` is clean after the documentation commit; `git log` on the
-branch has the exact hashes.
+The work is two commits on the `backend` branch, on top of `e81ec65`: the application changes,
+then the documentation, followed by this note. It was prepared on a local branch
+`release/local-rc` cut from `main` and moved to `backend` by cherry-pick, because `backend` is the
+working branch for platform changes and `main` (a merge commit with the same files) is the
+reviewed copy. `main` was not modified and nothing was force-pushed. `git log origin/backend` has
+the exact hashes.
