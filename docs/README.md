@@ -12,6 +12,14 @@ the detail behind it.
 | [`ANALYTICS_SPEC.md`](ANALYTICS_SPEC.md) | Every metric, its exact formula, the seven attention rules and their thresholds, and the semantics that never bend. |
 | [`ANALYTICS_CONTRACT.md`](ANALYTICS_CONTRACT.md) | What the platform layer guarantees to the analytics layer: the stored fields, the queries available, and the contracts C1–C12. |
 
+## Running and verifying
+
+| Page | What it answers |
+|---|---|
+| [`LOCAL_DEMO_GUIDE.md`](LOCAL_DEMO_GUIDE.md) | Start, stop, first sign-in, a teacher's walk-through, the end-to-end check, backup and restore. |
+| [`INTEGRATION_AUDIT.md`](INTEGRATION_AUDIT.md) | Which page calls which API, and how the web app talks to the backend. |
+| [`ACADLYTICS_FINAL_QUALITY_AUDIT.md`](ACADLYTICS_FINAL_QUALITY_AUDIT.md) | What was cleaned, fixed and tested for the local release candidate, with results and open issues. |
+
 ## Architecture and history
 
 | Page | What it answers |

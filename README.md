@@ -35,40 +35,44 @@ Prerequisites: **Docker Desktop** (Windows/macOS) or Docker Engine + Compose v2.
 git clone https://github.com/YushBytes/Faculty-Project.git
 cd Faculty-Project
 cp .env.example .env                  # ports and passwords live here
-docker compose up -d --build          # db + api + web
+# edit .env: set ACADLYTICS_ADMIN_PASSWORD (8+ characters) - there is no built-in password
+docker compose up -d --build          # db + api + web (web waits until the API is healthy)
 ```
 
-Open **http://localhost:3000**. The platform starts **empty**: no semesters, courses,
-sections, students or marks. Everything comes from the TLP reports you upload.
+Open **http://localhost:3001**. The platform starts **empty**: no departments, semesters,
+courses, sections, students or marks, and no demo data. Everything comes from what the
+Administrator sets up and the TLP reports you upload.
 
 | Service | URL |
 |---|---|
-| Web app | http://localhost:3000 |
+| Web app | http://localhost:3001 |
 | API | http://localhost:8000 |
 | API docs (OpenAPI / Swagger) | http://localhost:8000/docs |
 | Health | http://localhost:8000/health |
+| PostgreSQL | localhost:55432 |
 
 Stop with `docker compose down` (data is kept in the `pgdata` volume).
 `docker compose down -v` deletes the database; the next `up` starts empty again.
 
-## 2. Sign-in accounts
+## 2. First sign-in
 
-On an empty database the API creates only the people who run the platform:
+There are no demo accounts and no built-in passwords.
 
-| Role | Email | Password |
-|---|---|---|
-| Administrator | `admin@acadlytics.dev` | `Demo@2026pass` |
-| HOD, Computer Science and Engineering | `hod.cse@acadlytics.dev` | `Demo@2026pass` |
-| Academic Head, CSE | `academic.head@acadlytics.dev` | `Demo@2026pass` |
-| **Faculty** — created from the reports | `<staff id>@srmist.edu.in` (e.g. `902049@srmist.edu.in`) | `Faculty@2026` |
-
-Set `ACADLYTICS_INITIAL_PASSWORD` (and `FACULTY_DEFAULT_PASSWORD`) in `.env` to change the
-initial passwords; production refuses to start without the first one. Course Coordinators are
-appointed in the app (*Team & roles*) once their courses exist.
+1. **Administrator.** On start, when no Administrator exists, the API creates one from
+   `ACADLYTICS_ADMIN_EMAIL` (default `admin@acadlytics.dev`) and `ACADLYTICS_ADMIN_PASSWORD` in
+   `.env`. With no password set, nothing is created and the API log says so; set it and restart,
+   or run `docker compose exec api python -m app.cli create-admin --email <email> --name <name>`.
+2. **Department and its people.** Sign in as the Administrator → *Structure* → add the
+   department → *People* → add the HOD (and Academic Head) with a password you give them.
+3. **Faculty** accounts are created from the TLP reports as `<staff id>@srmist.edu.in`. They
+   cannot sign in until the HOD or Administrator sets a password in *People* (or, if you prefer
+   one starting password for all new faculty, set `FACULTY_DEFAULT_PASSWORD` in `.env`).
+4. Everyone changes their own password in *Settings → Change password*; doing so signs them out
+   of every device.
 
 ## 3. Upload TLP reports
 
-Sign in as the HOD, Academic Head or Administrator → **Import TLP marks** → drop the reports
+Sign in as the HOD, Academic Head or Administrator (create the department first, step 2 above) → **Import TLP marks** → drop the reports
 (Excel, CSV or TLP PDF; any number, one per section) → **Upload and validate** → **Confirm**.
 
 From each file the platform reads and sets up, reusing anything that already exists:
@@ -77,7 +81,7 @@ From each file the platform reads and sets up, reusing anything that already exi
 |---|---|
 | `Academic Year : AY2025-26-EVEN` | the semester (the latest one is the current semester) |
 | `21CSC201J(Data Structures and Algorithms)` | the course; its type (J = theory + lab) from the code |
-| `handled by Dr. Kavya Iyer(902049)` | the faculty member, with a login `902049@srmist.edu.in`, assigned to the class |
+| `handled by Dr. Kavya Iyer(902049)` | the faculty member, with a login `902049@srmist.edu.in` (password set in *People*), assigned to the class |
 | `Test Name : FJ-II`, `Component Max. Mark: 15.00` | the assessment and its maximum |
 | each `Reg. No` + `Name` row | the student (admission year from the register number) and their enrolment |
 | `Obtained Mark` / `Absent` | the marks — written only when you confirm; Absent stays absent, never 0 |
@@ -91,8 +95,8 @@ A file name that contradicts where its students already are is stopped with the 
 Existing student names are never overwritten. **Discarding** a staged file also removes whatever
 it set up that nothing else uses, so a wrong file leaves no trace.
 
-`demo/tlp-uploads/` has four sample reports (fictional students) to try this on an empty
-platform: two DSA sections, one DSA file without a section in its name, and an OS report for
+`demo/tlp-uploads/` has four sample reports (fictional students, used by the automated
+end-to-end check; nothing loads them into the application) to try this on a throwaway platform: two DSA sections, one DSA file without a section in its name, and an OS report for
 the A1 students.
 
 ## 4. Run without Docker (development)
@@ -101,22 +105,21 @@ Prerequisites: Python 3.11+, Node.js 20.9+ (22 recommended), PostgreSQL 16.
 
 ```bash
 # database (once)
-createuser -s acadlytics --pwprompt          # password: acadlytics
-createdb -O acadlytics acadlytics
+docker compose up -d db                      # PostgreSQL 16 on localhost:55432
 
 # backend
 cd backend
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 cp ../.env.example .env                         # adjust DATABASE_URL if needed
-alembic upgrade head
-python -m app.cli bootstrap                     # the sign-in accounts (empty database only)
+python -m alembic upgrade head
+python -m app.cli bootstrap                     # the Administrator from ACADLYTICS_ADMIN_PASSWORD in .env
 uvicorn app.main:app --reload --port 8000
 
 # frontend (second terminal)
 cd frontend
 npm ci
-npm run dev                                     # http://localhost:3000
+npm run dev -- -p 3001                          # http://localhost:3001
 ```
 
 The web app forwards `/api/v1/*` to `ACADLYTICS_API_URL` (default `http://localhost:8000`).
@@ -125,10 +128,13 @@ The web app forwards `/api/v1/*` to `ACADLYTICS_API_URL` (default `http://localh
 
 ```bash
 cd backend && pytest && ruff check . && ruff format --check .
-cd frontend && npm run lint && npm run build
+cd frontend && npm run lint && npm run typecheck && npm run build
+
+# the whole system over HTTP, against a throwaway stack (docs/LOCAL_DEMO_GUIDE.md)
+python scripts/e2e_live.py --web <web url> --api <api url> --admin-email <email> --admin-password <password>
 ```
 
-The backend suite (~1,900 tests) runs against real PostgreSQL: auth, the five-role scope and
+The backend suite (1,950+ tests) runs against real PostgreSQL: auth, the five-role scope and
 IDOR checks, TLP import in all three formats, set-up from the reports, routing and title-block verification, aggregate
 analytics consistency with the class engine, report downloads, migrations, seed.
 
@@ -165,11 +171,13 @@ observations, never causes.
 | Symptom | Fix |
 |---|---|
 | Web shows "The ACADLYTICS server is not reachable" | The API is still starting or failed: `docker compose logs api`. |
-| `port is already allocated` | Something else uses 5432/8000/3000: set `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` in `.env`. |
+| `port is already allocated` | Something else uses 55432/8000/3001: set `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` in `.env`. |
+| Nobody can sign in on a new platform | `ACADLYTICS_ADMIN_PASSWORD` was empty at first start: set it in `.env` and `docker compose up -d`, or use `create-admin` (section 2). |
+| A faculty member cannot sign in | Their account came from a report and has no password yet: set one in *People*. |
 | Build fails with `No matching distribution found`, `short read` or `unexpected EOF` | The network dropped during a download (pip and npm already retry). Run `docker compose build` again; finished layers are cached. |
 | A file shows **Section needed** | TLP reports do not name the section: type it in the box, or name the file with it (`…_A1.xlsx`). |
 | "The file name says section A2, but … are already in section A1" | The file is probably mislabelled; rename it, or type the right section. |
-| Want the old 97-section demo institution | `docker compose exec api python -m app.cli seed-demo` on an **empty** database (fictional data; do not mix with real reports). |
+| Need fictional data for development | Never loaded automatically. On an **empty, throwaway** database only: `docker compose exec -e ACADLYTICS_DEMO_PASSWORD=<8+ chars> api python -m app.cli seed-demo` (refused in production and on a database that has data; do not mix with real reports). |
 | Signed out on every refresh | You are on plain http with `NODE_ENV=production` outside Compose: set `ACADLYTICS_INSECURE_COOKIES=1` (local only). |
 | Docker Hub pull errors ("HTTP response to HTTPS client") | Transient registry/proxy issue; run `docker compose up -d --build` again. |
 | A PDF is rejected | Only SRM TLP-format text PDFs are read; upload the Excel/CSV export for other layouts. |
@@ -179,10 +187,11 @@ observations, never causes.
 ```
 backend/            FastAPI app: modules/{auth,users,organization,students,assessments,
                     imports,analytics,attention,interventions,reports,overview,audit},
-                    Alembic 0001–0008, ~1,900 tests
+                    Alembic 0001–0008, 1,950+ tests
 frontend/           Next.js 16 app: app/(app)/* pages, components/, lib/api (typed
                     adapters), lib/auth
-demo/tlp-uploads/   Sample TLP reports (fictional students) for trying the import
+demo/tlp-uploads/   Sample TLP reports (fictional students) for the end-to-end check
+scripts/            e2e_live.py: live end-to-end check of a running stack
 docs/               Data model, import format, analytics spec, contracts, architecture
 .github/            CI workflows, issue templates, pull request template
 docker-compose.yml  db + api + web

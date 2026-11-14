@@ -30,8 +30,9 @@ regardless of the code:
 
 - `APP_ENV=production` requires `JWT_SECRET_KEY` of at least 32 random characters. The
   application refuses to start with the development fallback.
-- `ACADLYTICS_INITIAL_PASSWORD` must be set in production; the first accounts are not created
-  with a default password there.
+- There is no built-in password in any environment. The first Administrator is created only
+  from `ACADLYTICS_ADMIN_PASSWORD`; faculty accounts created from reports cannot sign in until
+  a password is set for them (or `FACULTY_DEFAULT_PASSWORD` is configured).
 - `FACULTY_DEFAULT_PASSWORD` sets the initial password for faculty logins created from uploaded
   reports. Change it from the documented default and require a reset on first sign-in.
 - Serve over HTTPS. The session cookie drops its `Secure` flag only when

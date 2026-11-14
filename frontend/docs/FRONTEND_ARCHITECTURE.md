@@ -35,3 +35,34 @@ are CSS custom properties in `app/globals.css`. Motion is subtle and disabled un
 `prefers-reduced-motion`.
 
 UI visibility is never authorisation: the server enforces scope on every request.
+
+## Sign-in and accounts
+
+The sign-in page has an email and a password field and nothing else: no account list, no role
+picker, no prefilled credentials. Accounts come from the Administrator (*People*) and from
+uploaded TLP reports; see the repository README, "First sign-in".
+
+*Settings → Change password* calls `POST /api/v1/auth/password`. The server revokes every
+refresh token of the account, so the page then signs out and returns to `/login?changed=1`.
+
+## States every view has
+
+| State | What is shown |
+|---|---|
+| Loading | `LoadingDashboard` / skeletons from `components/ui.tsx` |
+| Empty | An empty-state card saying what is missing (for example no classes in the period). Never sample numbers or a placeholder chart. |
+| Insufficient data | The backend's own `status` / `reason` for the measure (`pctOf`, `Delta` in `lib/format.ts` render "—" with the reason), never a computed fallback |
+| Error | `ErrorState` with the server's message and a retry that bypasses the 30-second GET cache |
+
+## Checks
+
+```bash
+npm run lint         # eslint
+npm run typecheck    # tsc --noEmit
+npm run build        # next build
+```
+
+There is no unit-test runner in this package (`npm test` does not exist). The web app is
+exercised end to end by `scripts/e2e_live.py` at the repository root, which goes through the
+session routes and the `/api/v1` proxy; see `docs/LOCAL_DEMO_GUIDE.md`. Locally the app is
+served on http://localhost:3001 (`WEB_PORT`).

@@ -7,6 +7,17 @@ Dates are the dates of the work.
 
 ## Unreleased
 
+### Local release candidate — 2026-11-14
+
+- No built-in passwords and no demo sign-in: the first Administrator comes from
+  `ACADLYTICS_ADMIN_EMAIL` / `ACADLYTICS_ADMIN_PASSWORD`; start-up no longer creates a department,
+  HOD or Academic Head; faculty accounts from TLP reports need a password set in *People*.
+- Self-service password change (`POST /auth/password`, *Settings → Change password*).
+- Default local ports 3001 (web), 8000 (API), 55432 (PostgreSQL); API health check in Compose.
+- `scripts/e2e_live.py`, a live end-to-end check of a running stack (130 checks).
+- `docs/LOCAL_DEMO_GUIDE.md`, `docs/INTEGRATION_AUDIT.md`,
+  `docs/ACADLYTICS_FINAL_QUALITY_AUDIT.md`.
+
 ### Repository and documentation — 2026-11
 
 - MIT licence, `CONTRIBUTING.md`, `SECURITY.md` and a documentation index at `docs/README.md`.
