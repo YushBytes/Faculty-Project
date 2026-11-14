@@ -184,7 +184,7 @@ export default function ImportPage() {
           </div>
         </Card>
         <Card title="What happens" subtitle="Everything comes from your files">
-          <div className="statement"><CheckCircle2 size={16} /><span>The title block gives the <b>semester</b> (AY2025-26-EVEN), the <b>course</b> (21CSC201J and its name), the <b>faculty</b> (name and staff id — a login is created as <i>staffid</i>@srmist.edu.in) and the <b>test</b> with its maximum.</span></div>
+          <div className="statement"><CheckCircle2 size={16} /><span>The title block gives the <b>semester</b> (AY2025-26-EVEN), the <b>course</b> (21CSC201J and its name), the <b>faculty</b> (name and staff id — a login is created as <i>staffid</i>@srmist.edu.in; its password is set in <b>People</b>) and the <b>test</b> with its maximum.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>The <b>section</b> comes from where the students already are, else the file name (…_A1.xlsx), else you type it. A file name that contradicts the students is stopped.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>Each row gives a <b>student</b> (register number and name). Existing records are reused, never overwritten.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>Marks are numbers within the maximum; <b>Absent</b> stays absent — never zero. The % column is checked against the mark.</span></div>

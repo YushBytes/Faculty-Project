@@ -51,7 +51,7 @@ export default function Landing() {
                 {[[40, 92, "FJ-I"], [200, 150, "FJ-II"], [360, 104, "FJ-III"], [520, 78, "LLJ-II"]].map(([x, y, l]) => (
                   <g key={String(l)}><circle cx={Number(x)} cy={Number(y)} r="6" fill="#fff" stroke="#0d7a69" strokeWidth="3" /><text x={Number(x)} y={238} textAnchor="middle" fontSize="13" fill="#5e6b7e">{l}</text></g>
                 ))}
-                <rect x="170" y="160" rx="8" width="120" height="30" fill="#fcebea" /><text x="230" y="180" textAnchor="middle" fontSize="13" fontWeight="700" fill="#c2352a">−9.8 pp drop</text>
+                <rect x="170" y="160" rx="8" width="120" height="30" fill="#fcebea" /><text x="230" y="180" textAnchor="middle" fontSize="13" fontWeight="700" fill="#c2352a">Drop flagged</text>
               </svg>
             </div>
           </TiltCard>
@@ -72,7 +72,7 @@ export default function Landing() {
 
       <section className="l-section l-band" id="workflow">
         <h2>From a TLP report to a decision.</h2>
-        <p className="sub">The same path for one section or all ninety-seven.</p>
+        <p className="sub">The same path for one section or a whole department.</p>
         <div className="l-steps">
           <div><span>01 · UPLOAD</span><br /><b>Drop the reports</b><p>Many files at once; each is routed to its section and assessment automatically.</p></div>
           <div><span>02 · CHECK</span><br /><b>Preview and correct</b><p>Wrong maximum, wrong course, a mark above the maximum — caught before anything is written.</p></div>

@@ -10,6 +10,12 @@ const q = (filters?: ScopeFilters, extra?: Query): Query => ({ ...(filters as Qu
 
 export const workspaceApi = { get: () => api<Workspace>("/me/workspace") };
 
+/** Self-service password change. On success the server revokes every session of the account. */
+export const accountApi = {
+  changePassword: (current_password: string, new_password: string) =>
+    api<void>("/auth/password", { method: "POST", body: { current_password, new_password } }),
+};
+
 export const insightsApi = {
   overview: (filters: ScopeFilters, signal?: AbortSignal) => api<Overview>("/insights/overview", { query: q(filters), signal }),
   offerings: (filters: ScopeFilters) => api<{ period: string; items: OfferingRow[]; total: number }>("/insights/offerings", { query: q(filters) }),

@@ -1,12 +1,16 @@
 """Operational commands.
 
-    python -m app.cli bootstrap            # first start: sign-in accounts only (no-op later)
+    python -m app.cli bootstrap            # first start: the Administrator only (no-op later)
     python -m app.cli create-admin --email admin@example.edu --name "Admin"
-    python -m app.cli seed-demo            # the 97-section SRM demo institution (empty DB only)
+
+Development only (fictional data; refused in production and on a non-empty database; never run
+automatically; needs ACADLYTICS_DEMO_PASSWORD):
+
+    python -m app.cli seed-demo            # the 97-section fictional institution
     python -m app.cli seed-demo --minimal  # the small analytics fixture (contract C11)
 
-The password is read from ACADLYTICS_ADMIN_PASSWORD or prompted for (never an argument,
-so it does not land in shell history).
+Passwords are read from the environment (ACADLYTICS_ADMIN_PASSWORD) or prompted for, never
+taken as an argument, so they do not land in shell history.
 """
 
 import argparse
@@ -29,7 +33,9 @@ def create_admin(email: str, name: str) -> int:
     try:
         data = UserCreate(email=email, full_name=name, password=password, role=Role.ADMIN)
     except ValidationError as exc:
-        print(f"Invalid input: {exc}", file=sys.stderr)
+        # Never echo the submitted values: one of them is the password.
+        for error in exc.errors(include_input=False):
+            print(f"Invalid {'.'.join(map(str, error['loc']))}: {error['msg']}", file=sys.stderr)
         return 2
     with get_session_factory()() as session:
         try:
@@ -39,6 +45,17 @@ def create_admin(email: str, name: str) -> int:
             return 1
     print(f"Created administrator {user.email} ({user.id})")
     return 0
+
+
+def _demo_password() -> str | None:
+    password = os.environ.get("ACADLYTICS_DEMO_PASSWORD")
+    if not password or len(password) < 8:
+        print(
+            "Set ACADLYTICS_DEMO_PASSWORD (8+ characters) for the fictional demo accounts.",
+            file=sys.stderr,
+        )
+        return None
+    return password
 
 
 def seed_srm_command(sections: int, demo_dir: str | None) -> int:
@@ -52,7 +69,9 @@ def seed_srm_command(sections: int, demo_dir: str | None) -> int:
         from pathlib import Path
 
         srm.DEMO_DIR = Path(demo_dir)
-    password = os.environ.get("ACADLYTICS_DEMO_PASSWORD", "Demo@2026pass")
+    password = _demo_password()
+    if password is None:
+        return 2
     print(f"Seeding the SRM demo institution ({sections} sections) ...")
     with get_session_factory()() as session:
         try:
@@ -65,7 +84,7 @@ def seed_srm_command(sections: int, demo_dir: str | None) -> int:
         f"{report.faculty} faculty, {report.offerings} classes, {report.results} results, "
         f"{report.imports} TLP imports, {report.interventions} interventions."
     )
-    print(f"Password for every account: {password}")
+    print("Password for every account: the value of ACADLYTICS_DEMO_PASSWORD")
     for email, role in list(report.accounts.items())[:12]:
         print(f"  {role:<20} {email}")
     print(f"  ... and faculty1..faculty100@{srm.DOMAIN}")
@@ -81,7 +100,9 @@ def seed_demo_command() -> int:
     if get_settings().app_env is Environment.PRODUCTION:
         print("Refusing to load demo data in production.", file=sys.stderr)
         return 2
-    password = os.environ.get("ACADLYTICS_DEMO_PASSWORD", "Demo@2026pass")
+    password = _demo_password()
+    if password is None:
+        return 2
     with get_session_factory()() as session:
         try:
             report = seed_demo(session, password=password)
@@ -93,7 +114,7 @@ def seed_demo_command() -> int:
     print("Offerings:")
     for offering in report.offerings:
         print(f"  {offering}")
-    print(f"Accounts (password: {password}):")
+    print("Accounts (password: ACADLYTICS_DEMO_PASSWORD):")
     for email, role in report.users.items():
         print(f"  {role:<8} {email}")
     print("Embedded patterns (21CSC201J / A1):")
@@ -103,32 +124,38 @@ def seed_demo_command() -> int:
 
 
 def bootstrap_command() -> int:
-    from app.bootstrap import BootstrapError, bootstrap
+    from app.bootstrap import BootstrapError, admin_password_from_env, bootstrap, needs_admin
 
     with get_session_factory()() as session:
         try:
             created = bootstrap(session)
-        except BootstrapError as exc:
-            print(str(exc), file=sys.stderr)
+        except (BootstrapError, AppError) as exc:
+            print(getattr(exc, "message", str(exc)), file=sys.stderr)
             return 1
-    if created:
-        print("Empty platform: created the sign-in accounts (password: ACADLYTICS_INITIAL_PASSWORD")
-        print("or Demo@2026pass). Everything else comes from uploaded TLP reports.")
-        for email, role in created:
-            print(f"  {role:<14} {email}")
+        missing = not created and needs_admin(session)
+    for email, role in created:
+        print(f"Created the {role} account {email} (password: ACADLYTICS_ADMIN_PASSWORD).")
+    if missing and not admin_password_from_env():
+        # Not fatal: the API still starts, but nobody can sign in until an admin exists.
+        print(
+            "No Administrator account exists and ACADLYTICS_ADMIN_PASSWORD is not set. Set it in "
+            ".env and restart, or run: python -m app.cli create-admin --email <email> --name "
+            "<name>",
+            file=sys.stderr,
+        )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("bootstrap", help="Create the sign-in accounts on an empty database")
+    sub.add_parser("bootstrap", help="Create the Administrator when none exists")
     admin = sub.add_parser("create-admin", help="Create an ADMIN user")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", required=True)
     seed = sub.add_parser(
         "seed-demo",
-        help="Load the SRM demo institution into an empty database "
+        help="Development only: load a fictional institution into an empty database "
         "(password from ACADLYTICS_DEMO_PASSWORD)",
     )
     seed.add_argument("--minimal", action="store_true", help="the small C11 analytics fixture")

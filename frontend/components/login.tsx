@@ -10,15 +10,6 @@ import { ApiError } from "@/lib/api/http";
 import type { Workspace } from "@/lib/api/types";
 import { ROLE_LABEL, initials } from "@/lib/format";
 
-/** The sign-in accounts an empty platform starts with (see backend/app/bootstrap.py), then the
- * Course Coordinator the demo seed appoints (backend/app/demo/srm.py). Faculty accounts are
- * created from the TLP reports as <staff id>@srmist.edu.in. */
-const DEMO = [
-  ["admin@acadlytics.dev", "Administrator"],
-  ["hod.cse@acadlytics.dev", "Head of Department · CSE"],
-  ["academic.head@acadlytics.dev", "Academic Head · CSE"],
-  ["coord.dsa@acadlytics.dev", "Course Coordinator · DSA"],
-];
 const STEPS = ["Verifying your account", "Resolving your academic scope", "Loading the current semester", "Preparing your workspace"];
 
 function greeting() {
@@ -102,16 +93,11 @@ export function LoginView() {
               <div className="pw-wrap"><input className="input" type={show ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
             </label>
+            {params.get("changed") && !error && <div className="notice" role="status">Your password was changed. Sign in with the new one.</div>}
             {error && <div className="notice notice-error" role="alert">{error}</div>}
             <button className="btn btn-primary" style={{ height: 48 }} disabled={busy || status === "loading"}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</button>
           </form>
-          <details className="demo-accounts">
-            <summary>Sign-in accounts</summary>
-            {DEMO.map(([address, label]) => (
-              <div className="acc" key={address}><span><b>{label}</b><br /><span className="muted">{address}</span></span><button type="button" onClick={() => { setEmail(address); setPassword(""); }}>Use</button></div>
-            ))}
-            <div className="acc"><span className="muted">Course Coordinators exist once they are appointed in <b>Team &amp; roles</b>, or from the demo seed. Faculty sign in with <b>staff id</b>@srmist.edu.in once a TLP report naming them is uploaded. Initial passwords are in the project README.</span></div>
-          </details>
+          <p className="muted" style={{ marginTop: 22, fontSize: 13.5 }}>No account yet, or forgotten your password? Ask your HOD or the ACADLYTICS Administrator. Faculty accounts are <b>staff id</b>@srmist.edu.in.</p>
         </div>
       </section>
     </main>

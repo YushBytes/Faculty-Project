@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acadlytics}
       POSTGRES_DB: ${POSTGRES_DB:-acadlytics}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Host 55432, not 5432, so it never collides with another local PostgreSQL.
+      - "${POSTGRES_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -24,29 +25,38 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acadlytics}:${POSTGRES_PASSWORD:-acadlytics}@db:5432/${POSTGRES_DB:-acadlytics}
-      # First start on an empty database creates the admin / HOD / Academic Head logins.
-      ACADLYTICS_INITIAL_PASSWORD: ${ACADLYTICS_INITIAL_PASSWORD:-Demo@2026pass}
-      # Faculty found in uploaded TLP reports sign in as <staff id>@<domain> with this.
-      FACULTY_DEFAULT_PASSWORD: ${FACULTY_DEFAULT_PASSWORD:-Faculty@2026}
+      # The first Administrator, created when none exists. There is no built-in password:
+      # leave it empty and nothing is created (see README, "First sign-in").
+      ACADLYTICS_ADMIN_EMAIL: ${ACADLYTICS_ADMIN_EMAIL:-admin@acadlytics.dev}
+      ACADLYTICS_ADMIN_PASSWORD: ${ACADLYTICS_ADMIN_PASSWORD:-}
+      # Optional initial password for faculty logins created from TLP reports. Empty: those
+      # accounts cannot sign in until an Administrator or HOD sets their password.
+      FACULTY_DEFAULT_PASSWORD: ${FACULTY_DEFAULT_PASSWORD:-}
       INSTITUTION_EMAIL_DOMAIN: ${INSTITUTION_EMAIL_DOMAIN:-srmist.edu.in}
-      # Only used by the optional `seed-demo` command.
-      ACADLYTICS_DEMO_DIR: /tmp/acadlytics-demo
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
   web:
     build: ./frontend
     environment:
       ACADLYTICS_API_URL: http://api:8000
-      # Local demo over plain http: allow the httpOnly session cookie without the Secure flag.
+      # Local use over plain http: allow the httpOnly session cookie without the Secure flag.
       ACADLYTICS_INSECURE_COOKIES: "1"
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      # Host 3001, not 3000, which other local projects commonly use.
+      - "${WEB_PORT:-3001}:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

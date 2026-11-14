@@ -27,7 +27,7 @@ export default function Sections() {
       <div className="kpis" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
         <div className="kpi"><div className="k-label">Highest average</div><div className="k-value">{ranked[0] ? pct(ranked[0].average.value) : "—"}</div><div className="k-foot">{ranked[0]?.label}</div></div>
         <div className="kpi"><div className="k-label">Lowest average</div><div className="k-value">{ranked.at(-1) ? pct(ranked.at(-1)!.average.value) : "—"}</div><div className="k-foot">{ranked.at(-1)?.label}</div></div>
-        <div className="kpi"><div className="k-label">Sections below 55%</div><div className="k-value">{ranked.filter((r) => (r.average.value ?? 100) < 55).length}</div><div className="k-foot">of {all.length}</div></div>
+        <div className="kpi"><div className="k-label">Sections with flagged students</div><div className="k-value">{all.filter((r) => r.attention_students > 0).length}</div><div className="k-foot">of {all.length}</div></div>
         <div className="kpi warn"><div className="k-label">Students needing attention</div><div className="k-value">{num(data.kpis.attention_students)}</div><div className="k-foot">across all sections</div></div>
       </div>
       <Card className="section" title="Section map" subtitle="Each tile is a section; hover for pass % and attention">

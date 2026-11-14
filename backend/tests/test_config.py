@@ -40,3 +40,14 @@ def test_rejects_asymmetric_or_none_jwt_algorithm() -> None:
     for algorithm in ("none", "RS256"):
         with pytest.raises(ValidationError):
             Settings(_env_file=None, jwt_algorithm=algorithm)
+
+
+def test_empty_faculty_default_password_means_none(monkeypatch) -> None:
+    from app.core.config import Settings
+
+    monkeypatch.setenv("FACULTY_DEFAULT_PASSWORD", "")
+    assert Settings().faculty_default_password is None
+    monkeypatch.setenv("FACULTY_DEFAULT_PASSWORD", "Configured@2026")
+    assert Settings().faculty_default_password == "Configured@2026"
+    monkeypatch.delenv("FACULTY_DEFAULT_PASSWORD")
+    assert Settings(_env_file=None).faculty_default_password is None

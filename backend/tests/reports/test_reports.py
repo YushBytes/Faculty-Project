@@ -781,11 +781,13 @@ class TestDeterminismAndSafety:
 
     @pytest.mark.parametrize("scenario", sorted(b.SCENARIOS))
     def test_every_scenario_exports_in_all_three_formats(self, scenario: str) -> None:
+        # Including a class with no published assessment: it still exports (an empty-state
+        # report, not an error), without NaN/Infinity.
         snapshot = b.SCENARIOS[scenario]()
-        if not snapshot.ordered_assessments():
-            pytest.skip("no published assessment to report on")
         report = class_report(snapshot, thresholds(snapshot), generated_at=STAMP)
-        assert to_csv(report)
+        csv_text = to_csv(report).decode("utf-8-sig")
+        assert csv_text
+        assert not re.search(r"(nan|inf|infinity)", csv_text.lower())
         assert to_xlsx(report)
         assert to_pdf(report).startswith(b"%PDF")
 

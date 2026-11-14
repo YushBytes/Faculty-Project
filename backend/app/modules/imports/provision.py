@@ -23,6 +23,7 @@ so discarding the upload can remove exactly that and nothing else.
 from __future__ import annotations
 
 import re
+import secrets
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -404,7 +405,9 @@ class Provisioner:
             user = User(
                 email=email,
                 full_name=name[:200],
-                password_hash=hash_password(self._settings.faculty_default_password),
+                password_hash=hash_password(
+                    self._settings.faculty_default_password or secrets.token_urlsafe(32)
+                ),
                 role=Role.FACULTY,
                 is_active=True,
                 employee_code=staff_id,

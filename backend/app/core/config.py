@@ -37,10 +37,17 @@ class Settings(BaseSettings):
     # seconds are treated as a race, not token theft. 0 disables the allowance.
     refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
 
-    # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") sign in as
-    # <staff id>@<domain> with this initial password until they change it.
+    # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") get the login
+    # <staff id>@<domain>. With FACULTY_DEFAULT_PASSWORD set they sign in with it (and should
+    # change it in Settings); unset, the account has a random unknown password and cannot sign
+    # in until an Administrator or HOD sets one in People. There is no built-in default.
     institution_email_domain: str = "srmist.edu.in"
-    faculty_default_password: str = Field(default="Faculty@2026", min_length=8)
+    faculty_default_password: str | None = Field(default=None, min_length=8)
+
+    @field_validator("faculty_default_password", mode="before")
+    @classmethod
+    def _empty_means_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("database_url")
     @classmethod
