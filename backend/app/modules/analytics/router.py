@@ -21,21 +21,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 import app.modules.analytics.recompute  # noqa: F401  (installs the C4 hook)
-from app.core.errors import ErrorResponse, NotFoundError
+from app.core.errors import ErrorResponse
 from app.db.session import get_db
 from app.modules.analytics.service import (
     AnalyticsService,
     ClassAnalytics,
     CohortAttention,
     CohortInsights,
-    ExportFormat,
     StudentAnalytics,
 )
 from app.modules.auth.dependencies import CurrentUser
@@ -152,17 +151,15 @@ def report(
     report_kind: Annotated[ReportKind, Path(description="Which report to build")],
     actor: CurrentUser,
     service: Analytics,
+    # Validated like every other query parameter: an unknown format is a 422
+    # validation_error, the same as on /insights/report, not a 404.
     export_format: Annotated[
-        str, Query(alias="format", description="csv, xlsx or pdf")
-    ] = ExportFormat.CSV,
+        Literal["csv", "xlsx", "pdf"], Query(alias="format", description="csv, xlsx or pdf")
+    ] = "csv",
     student_id: Annotated[
         uuid.UUID | None, Query(description="Required for a student report")
     ] = None,
 ) -> Response:
-    if export_format not in ExportFormat.all():
-        raise NotFoundError(
-            f"Unknown export format {export_format!r}. Use one of {', '.join(ExportFormat.all())}."
-        )
     built = service.report(
         offering_id,
         report_kind,

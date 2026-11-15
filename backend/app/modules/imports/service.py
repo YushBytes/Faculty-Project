@@ -28,7 +28,7 @@ from app.core.errors import (
     PermissionDeniedError,
 )
 from app.core.pagination import Page, PageParams
-from app.core.tabular import normalise_header, read_table
+from app.core.tabular import normalise_header, read_table, safe_file_name
 from app.modules.assessments.models import Assessment, AssessmentResult, ResultSource
 from app.modules.assessments.repository import AssessmentRepository, CohortRepository
 from app.modules.assessments.service import AssessmentService, ResultChange, ResultWriter
@@ -135,7 +135,7 @@ class ImportService:
         batch = ImportBatch(
             offering_id=offering.id,
             assessment_id=assessment.id if assessment else None,
-            file_name=(filename or "upload")[:255],
+            file_name=safe_file_name(filename),
             file_type=table.file_type.value,
             file_sha256=hashlib.sha256(content).hexdigest(),
             file_format=detect_format(table.headers),
@@ -625,7 +625,10 @@ def preview_read(batch: ImportBatch, preview: Preview, *, only: str = "all") -> 
         issues = row.issues + [i for c in row.cells for i in c.issues]
         if only == "errors":
             return any(i.level.value == "error" for i in issues)
-        return bool(issues)  # "issues": errors or warnings or infos
+        # "issues": errors, warnings or infos -- and excluded rows. An excluded row is not
+        # validated, so it has no issues of its own; without this it would vanish from the
+        # review and the person could not see or undo the exclusion.
+        return bool(issues) or row.excluded
 
     return ImportPreview.model_validate(
         {

@@ -311,5 +311,8 @@ class TestErrorsDoNotLeak:
             params={"format": "../../etc/passwd"},
             headers=auth_headers(setup.actor),
         )
-        assert response.status_code == 404, response.text
+        # Refused by validation before any report is built (C7 validation_error).
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["code"] == "validation_error"
         assert "etc/passwd" not in response.headers.get("content-disposition", "")
+        assert "etc/passwd" not in response.text, "the rejected value is echoed back"

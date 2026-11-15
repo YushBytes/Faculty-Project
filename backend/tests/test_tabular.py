@@ -7,7 +7,13 @@ import pytest
 from openpyxl import Workbook
 
 from app.core.errors import BusinessRuleError
-from app.core.tabular import FileType, UnsupportedFileError, normalise_header, read_table
+from app.core.tabular import (
+    FileType,
+    UnsupportedFileError,
+    normalise_header,
+    read_table,
+    safe_file_name,
+)
 
 
 def xlsx(rows: list[list[object]]) -> bytes:
@@ -120,3 +126,23 @@ def test_oversized_file_is_refused_before_parsing() -> None:
 
     with pytest.raises(BusinessRuleError, match="larger than"):
         read_table("m.csv", b"x" * (MAX_UPLOAD_BYTES + 1))
+
+
+@pytest.mark.parametrize(
+    ("sent", "recorded"),
+    [
+        ("marks.csv", "marks.csv"),
+        ("DSA_FJ-II_A1.xlsx", "DSA_FJ-II_A1.xlsx"),
+        ("../../etc/passwd.csv", "passwd.csv"),
+        ("C:\\Users\\x\\Desktop\\OS_FT2.xlsx", "OS_FT2.xlsx"),
+        ("re\x00port\r\n.csv", "report.csv"),
+        ("  spaced name.csv  ", "spaced name.csv"),
+        ("..", "upload"),
+        ("dir/", "upload"),
+        ("", "upload"),
+        (None, "upload"),
+        ("a" * 300 + ".csv", "a" * 255),
+    ],
+)
+def test_safe_file_name_keeps_only_the_last_segment(sent: str | None, recorded: str) -> None:
+    assert safe_file_name(sent) == recorded

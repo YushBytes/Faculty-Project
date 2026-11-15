@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Concurrent refreshes of one cookie (two tabs, a reload mid-refresh) within this many
     # seconds are treated as a race, not token theft. 0 disables the allowance.
     refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
+    # Failed sign-in throttle (app/core/throttle.py): this many wrong passwords for one email
+    # within the window, and that email is refused (429) until the window passes. 0 disables.
+    login_max_failures: int = Field(default=10, ge=0, le=1000)
+    login_window_seconds: int = Field(default=900, ge=1, le=86400)
 
     # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") get the login
     # <staff id>@<domain>. With FACULTY_DEFAULT_PASSWORD set they sign in with it (and should

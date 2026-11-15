@@ -350,9 +350,13 @@ class TestReports:
         assert response.status_code == 422, "the enum rejects it before the handler"
 
     def test_an_unknown_export_format_is_rejected(self, client: TestClient) -> None:
+        # A bad query parameter is a validation error (C7), as on /insights/report; 404 is
+        # kept for things that do not exist or are out of scope.
         response = client.get(url("/reports/class_summary"), params={"format": "docx"})
-        assert response.status_code == 404
-        assert "unknown export format" in response.json()["error"]["message"].lower()
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "validation_error"
+        assert ["query", "format"] in [detail["loc"] for detail in error["details"]]
 
     def test_the_xlsx_download_opens_as_a_workbook(self, client: TestClient) -> None:
         from openpyxl import load_workbook

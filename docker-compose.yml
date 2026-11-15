@@ -24,6 +24,8 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me-0123456789abcdef}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-10}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-acadlytics}:${POSTGRES_PASSWORD:-acadlytics}@db:5432/${POSTGRES_DB:-acadlytics}
       # The first Administrator, created when none exists. There is no built-in password:
       # leave it empty and nothing is created (see README, "First sign-in").

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.errors import AuthenticationError, BusinessRuleError
+from app.core.errors import AuthenticationError, BusinessRuleError, TooManyAttemptsError
 from app.core.security import (
     InvalidTokenError,
     create_access_token,
@@ -15,6 +15,7 @@ from app.core.security import (
     password_needs_rehash,
     verify_password,
 )
+from app.core.throttle import login_throttle
 from app.modules.audit.service import AuditService
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.repository import RefreshTokenRepository
@@ -34,12 +35,23 @@ class AuthService:
         self._tokens = RefreshTokenRepository(session)
 
     def login(self, email: str, password: str) -> TokenPair:
-        user = self._users.get_by_email(normalise_email(email))
+        key = normalise_email(email)
+        wait = login_throttle.retry_after(key)
+        if wait is not None:
+            # Refused before the password is checked, so guessing cannot continue.
+            raise TooManyAttemptsError(
+                f"Too many failed sign-in attempts for this account. Try again in "
+                f"{(wait + 59) // 60} minute(s), or ask an administrator to reset the password.",
+                retry_after=wait,
+            )
+        user = self._users.get_by_email(key)
         # verify_password always runs (against a dummy hash when user is None) to keep
         # timing uniform; inactive accounts get the same generic message.
         password_ok = verify_password(password, user.password_hash if user else None)
         if user is None or not password_ok or not user.is_active:
+            login_throttle.failed(key)
             raise AuthenticationError(INVALID_CREDENTIALS)
+        login_throttle.succeeded(key)
 
         now = datetime.now(UTC)
         if password_needs_rehash(user.password_hash):

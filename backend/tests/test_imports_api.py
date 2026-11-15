@@ -147,6 +147,31 @@ class TestStageAndConfirm:
         )
         assert blank_to_zero.actor_id == faculty.id
 
+    def test_an_excluded_row_stays_in_the_issues_view_so_it_can_be_included_again(
+        self, client: TestClient, faculty: User, setup
+    ) -> None:
+        preview = upload(client, faculty, setup, sheet(setup, [45, 99, 10])).json()
+        url = f"/api/v1/imports/{preview['batch']['id']}"
+        headers = auth_headers(faculty)
+        excluded = client.post(
+            f"{url}/exclude", json={"rows": [3]}, params={"only": "issues"}, headers=headers
+        ).json()
+        assert excluded["summary"]["errors"] == 0
+        assert [(r["row"], r["excluded"]) for r in excluded["rows"]] == [(3, True)]
+        assert [
+            r["row"]
+            for r in client.get(f"{url}/preview?only=errors", headers=headers).json()["rows"]
+        ] == []
+
+        included = client.post(
+            f"{url}/exclude",
+            json={"rows": [3], "excluded": False},
+            params={"only": "issues"},
+            headers=headers,
+        ).json()
+        assert included["summary"]["errors"] == 1
+        assert [(r["row"], r["excluded"]) for r in included["rows"]] == [(3, False)]
+
     def test_reset_fix(self, client: TestClient, faculty: User, setup) -> None:
         preview = upload(client, faculty, setup, sheet(setup, [45, 99, 10])).json()
         url = f"/api/v1/imports/{preview['batch']['id']}/fix"
