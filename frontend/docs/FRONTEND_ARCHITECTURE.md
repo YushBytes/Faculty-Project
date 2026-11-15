@@ -59,10 +59,14 @@ refresh token of the account, so the page then signs out and returns to `/login?
 ```bash
 npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
+npm test             # Vitest: tests/*.test.ts (HTTP client, display helpers)
 npm run build        # next build
+npm run test:e2e     # Playwright: e2e/*.spec.ts in a real browser, against a running stack
 ```
 
-There is no unit-test runner in this package (`npm test` does not exist). The web app is
-exercised end to end by `scripts/e2e_live.py` at the repository root, which goes through the
-session routes and the `/api/v1` proxy; see `docs/LOCAL_DEMO_GUIDE.md`. Locally the app is
+`npm test` needs nothing running. `npm run test:e2e` needs a throwaway stack and an
+Administrator account (`E2E_WEB`, `E2E_API`, `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`); its global
+setup creates its own department, two faculty members, two classes and marks, so it never depends
+on or changes other data. See `docs/TESTING_AND_VERIFICATION.md`. The HTTP-level checks
+`scripts/e2e_live.py` and `scripts/verify_live.py` complement it. Locally the app is
 served on http://localhost:3001 (`WEB_PORT`).
