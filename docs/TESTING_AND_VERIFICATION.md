@@ -174,5 +174,8 @@ no claim about institutional scale is made.
 - Production deployment on any host or cloud (not performed).
 - Firefox, Safari, real phones; screen readers.
 - Load and concurrency at the design scale.
-- The GitHub Actions workflows were edited (constraints, frontend type check and unit tests) but
-  have not run on GitHub yet; they run on the next push.
+- Playwright and the live scripts do not run in GitHub Actions (they need a running stack).
+
+The edited GitHub Actions workflows did run on the push of `62b47a6`: **backend** (pinned
+install, ruff, full pytest on PostgreSQL 16) passed in 4 min 36 s; **frontend** (lint, type
+check, unit tests, build) passed in 1 min 44 s.
