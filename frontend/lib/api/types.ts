@@ -19,6 +19,9 @@ export type Workspace = {
   terms: { id: string; code: string; name: string; academic_year: string; semester: "ODD" | "EVEN" | null; is_current: boolean }[];
   academic_years: string[];
   current_term: { id: string; academic_year: string; semester: "ODD" | "EVEN" | null; name: string } | null;
+  /** Departments whose analytics thresholds this user may read, decided by the server (the
+   *  same rule `GET /departments/{id}/settings` enforces; anything else answers 404). */
+  threshold_departments: { id: string; code: string; name: string; can_edit: boolean }[];
   capabilities: Record<
     | "manage_users" | "manage_departments" | "manage_terms" | "manage_sections" | "manage_courses"
     | "manage_coordinators" | "assign_faculty" | "import_marks" | "view_audit" | "compare_faculty",

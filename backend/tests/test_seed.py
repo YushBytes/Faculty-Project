@@ -15,7 +15,7 @@ from app.seed import SeedError, seed_demo
 
 @pytest.fixture
 def report(db_session: Session):
-    return seed_demo(db_session, password="Demo@2026pass")
+    return seed_demo(db_session, password="Seed-fixture-pass-1")
 
 
 def _offering(db: Session, course: str, section: str) -> CourseOffering:

@@ -172,8 +172,8 @@ def main() -> int:  # noqa: C901 - a linear script reads best as one sequence of
     section("Authentication")
     admin = Client(args.web)
     check("wrong password is 401", admin.login(args.admin_email, "wrong-password-123").status == 401)
-    check("old built-in password is refused",
-          admin.login(args.admin_email, "Demo@2026pass").status == 401)
+    check("a common default password is refused",
+          admin.login(args.admin_email, "Admin@123").status == 401)
     r = admin.login(args.admin_email, args.admin_password)
     check("admin signs in through /api/session/login", r.status == 200, r.status)
     check("refresh token is not in the response body", b"refresh_token" not in r.body)
@@ -244,7 +244,7 @@ def main() -> int:  # noqa: C901 - a linear script reads best as one sequence of
         user = found[0]
         fresh = Client(args.web)
         check(f"faculty {staff} cannot sign in before a password is set",
-              fresh.login(user["email"], "Faculty@2026").status == 401)
+              fresh.login(user["email"], staff).status == 401)
         pw = f"Fac-{staff}-" + uuid.uuid4().hex[:6]
         check(f"HOD sets {staff}'s password",
               hod.patch(f"{V1}/users/{user['id']}", {"password": pw}).status == 200)

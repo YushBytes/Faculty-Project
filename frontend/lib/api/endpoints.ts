@@ -129,6 +129,8 @@ export const importsApi = {
 export const orgApi = {
   departments: () => api<Page<Department>>("/departments", { query: { limit: 200 } }),
   createDepartment: (body: { code: string; name: string }) => api<Department>("/departments", { body }),
+  /** A department's analytics threshold overrides. Scoped by the server: 404 outside the user's departments. */
+  departmentSettings: (departmentId: string) => api<{ key: string; value: unknown; updated_at: string }[]>(`/departments/${departmentId}/settings`),
   terms: () => api<Page<Term>>("/terms", { query: { limit: 200 } }),
   createTerm: (body: unknown) => api<Term>("/terms", { body }),
   updateTerm: (id: string, body: unknown) => api<Term>(`/terms/${id}`, { method: "PATCH", body }),

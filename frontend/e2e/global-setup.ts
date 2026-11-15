@@ -15,6 +15,8 @@ export type E2EState = {
   web: string;
   api: string;
   run: string;
+  departmentId: string;
+  otherDepartmentId: string;
   admin: { email: string; password: string };
   facultyA: { email: string; password: string; id: string };
   facultyB: { email: string; password: string; id: string };
@@ -55,6 +57,10 @@ export default async function globalSetup() {
 
   const token = await login(admin.email, admin.password);
   const dept = await call<{ id: string }>("POST", "/departments", token, { code: `E2E${run}`, name: `Browser tests ${run}` });
+  // A second department nobody in this run teaches in: its thresholds must stay out of reach.
+  const other = await call<{ id: string }>("POST", "/departments", token, { code: `OTH${run}`, name: `Other department ${run}` });
+  await call("PUT", `/departments/${dept.id}/settings/low_performance_percent`, token, { value: 55 });
+  await call("PUT", `/departments/${other.id}/settings/low_performance_percent`, token, { value: 61 });
   const terms = await call<{ items: { id: string; is_current: boolean }[] }>("GET", "/terms?limit=200", token);
   let term = terms.items.find((t) => t.is_current) ?? terms.items[0];
   if (!term) {
@@ -95,7 +101,7 @@ export default async function globalSetup() {
   const assessmentB = await call<{ id: string }>("POST", `/offerings/${classA.id}/assessments`, tokenA, { name: "CT2", assessment_type: "CT", max_marks: 50, weightage: 50 });
 
   const state: E2EState = {
-    web, api, run, admin,
+    web, api, run, admin, departmentId: dept.id, otherDepartmentId: other.id,
     facultyA: people.a, facultyB: people.b,
     classA: classA.id, classB: classB.id, assessmentA: assessmentA.id, assessmentB: assessmentB.id,
     studentsA, studentsB,

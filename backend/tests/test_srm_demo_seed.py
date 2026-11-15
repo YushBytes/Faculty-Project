@@ -14,7 +14,7 @@ from app.modules.users.models import Role, User
 def test_small_srm_institution(db_session: Session) -> None:
     report = seed_srm(
         db_session,
-        password="Demo@2026pass",
+        password="Seed-fixture-pass-1",
         sections=8,
         write_demo_files=False,
         progress=lambda *_: None,

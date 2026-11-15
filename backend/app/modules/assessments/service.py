@@ -56,7 +56,12 @@ from app.modules.assessments.schemas import (
 )
 from app.modules.audit.service import AuditService
 from app.modules.organization.models import CourseOffering, Department, DepartmentSetting
-from app.modules.organization.scope import Access, OfferingAccess, can_manage_department
+from app.modules.organization.scope import (
+    Access,
+    OfferingAccess,
+    can_manage_department,
+    can_view_department_settings,
+)
 from app.modules.students.models import EnrollmentStatus, Student
 from app.modules.students.schemas import StudentSummary
 from app.modules.users.models import Role, User
@@ -626,14 +631,25 @@ class SettingsService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def _department(self, department_id: uuid.UUID) -> Department:
+    def _department(self, department_id: uuid.UUID, actor: User | None = None) -> Department:
+        """The department, if it exists and ``actor`` may see its thresholds.
+
+        Out of scope is reported exactly like a missing department (404), so the answer does
+        not disclose which departments exist. ``actor=None`` is the analytics engine's own
+        read (threshold resolution for an offering already authorised), which is trusted.
+        """
         department = self._session.get(Department, department_id)
-        if department is None:
+        if department is None or (
+            actor is not None
+            and not can_view_department_settings(self._session, actor, department_id)
+        ):
             raise NotFoundError("Department not found.")
         return department
 
-    def list(self, department_id: uuid.UUID) -> list[DepartmentSetting]:
-        self._department(department_id)
+    def list(
+        self, department_id: uuid.UUID, *, actor: User | None = None
+    ) -> list[DepartmentSetting]:
+        self._department(department_id, actor)
         return list(
             self._session.scalars(
                 select(DepartmentSetting)
@@ -649,7 +665,7 @@ class SettingsService:
     def put(
         self, department_id: uuid.UUID, key: str, value: Any, *, actor: User
     ) -> DepartmentSetting:
-        self._department(department_id)
+        self._department(department_id, actor)  # 404 outside the actor's scope
         if not can_manage_department(actor, department_id):
             raise PermissionDeniedError("You can only change settings of your own department.")
         setting = self._session.scalar(
@@ -687,7 +703,7 @@ class SettingsService:
         return setting
 
     def delete(self, department_id: uuid.UUID, key: str, *, actor: User) -> None:
-        self._department(department_id)
+        self._department(department_id, actor)  # 404 outside the actor's scope
         if not can_manage_department(actor, department_id):
             raise PermissionDeniedError("You can only change settings of your own department.")
         setting = self._session.scalar(

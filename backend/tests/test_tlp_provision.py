@@ -120,7 +120,7 @@ def test_first_report_sets_up_everything_and_stores_only_its_data(
     assert absent.status is ResultStatus.ABSENT and absent.score is None  # never 0
 
     # No shared default password: the account cannot sign in until someone sets one.
-    for guess in ("Faculty@2026", "Demo@2026pass", "902049"):
+    for guess in ("902049", "Password@123", "srmist@123", "902049@srmist"):
         denied = client.post(
             f"{API}/auth/login", json={"email": "902049@srmist.edu.in", "password": guess}
         )

@@ -713,8 +713,20 @@ def main() -> int:
     check("faculty GET /users is 403", fb.get("/users").status == 403, fb.get("/users").status)
     b_audit = fb.get("/audit-logs?limit=200").json()["items"]
     check("faculty audit log is scoped: none of A's class", all(a["offering_id"] != o1 for a in b_audit), len(b_audit))
-    # Deliberate (tests/test_settings_api.py): threshold settings are readable by anyone signed in.
-    check("department threshold settings are readable (documented design)", fb.get(f"/departments/{dept_id}/settings").status == 200)
+    # Threshold settings: own department (and departments of classes taught) only; else 404.
+    check("faculty reads their own department's thresholds", fb.get(f"/departments/{dept_id}/settings").status == 200)
+    others = [d["id"] for d in admin.get("/departments?limit=200").json()["items"] if d["id"] != dept_id]
+    if others:
+        hidden = fb.get(f"/departments/{others[0]}/settings")
+        missing = fb.get(f"/departments/{uuid.uuid4()}/settings")
+        check("faculty gets 404 for another department's thresholds, same as a missing one",
+              hidden.status == missing.status == 404 and hidden.json() == missing.json(), hidden.status)
+        check("faculty cannot change another department's thresholds (404)",
+              fb.put(f"/departments/{others[0]}/settings/low_performance_percent", {"value": 1}).status == 404)
+    check("faculty cannot change their own department's thresholds (403)",
+          fb.put(f"/departments/{dept_id}/settings/low_performance_percent", {"value": 1}).status == 403)
+    names = {d["id"] for d in fb.get("/me/workspace").json()["threshold_departments"]}
+    check("the workspace lists exactly the readable departments", names == {dept_id}, names)
     check("faculty cannot create users, departments or recompute (403)",
           {fb.post("/users", {"email": "x@verify.acadlytics.dev", "full_name": "X", "password": "Verify-12345678", "role": "FACULTY"}).status,
            fb.post("/departments", {"code": "NOPE", "name": "Nope"}).status, fb.post(f"/admin/recompute?offering_id={o1}").status} == {403})

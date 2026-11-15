@@ -53,7 +53,7 @@ def test_creates_only_the_administrator(
         json={"email": "registrar@example.edu", "password": "A-real-secret-2026"},
     )
     assert ok.status_code == 200, ok.text
-    for old_default in ("Demo@2026pass", "Faculty@2026"):
+    for old_default in ("admin", "Admin@123", "password", "registrar"):
         denied = client.post(
             f"{API}/auth/login", json={"email": "registrar@example.edu", "password": old_default}
         )
