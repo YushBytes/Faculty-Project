@@ -24,6 +24,8 @@ One application in one repository: a FastAPI backend (`backend/`), a Next.js web
 
 Every rule above is enforced by the API (`backend/app/modules/organization/scope.py`,
 `users/service.py`); an out-of-scope id is a 404, never a leak. The UI only mirrors it.
+Department analytics thresholds follow the same scope: the Administrator sees every department,
+everyone else their own department and the departments of the classes they can see.
 
 ---
 
@@ -143,9 +145,9 @@ cd frontend && E2E_WEB=<web url> E2E_API=<api url> E2E_ADMIN_EMAIL=<email> E2E_A
 
 | Suite | What it covers |
 |---|---|
-| Backend pytest (1,974 tests, real PostgreSQL) | auth and the throttle, the five-role scope and IDOR, TLP import in three formats, validation and atomicity, 1,120 analytics engine tests, reports, migrations |
-| Frontend Vitest (21) | the HTTP client (token, one shared refresh, error envelope, cache) and display helpers (missing is never 0) |
-| Playwright (13, real browser) | sign-in/out, role navigation, every page, CSV import with mapping and exclusion, faculty isolation, report downloads, interventions, phone layout |
+| Backend pytest (2,003 tests, real PostgreSQL) | auth and the throttle, the five-role scope and IDOR, TLP import in three formats, validation and atomicity, 1,120 analytics engine tests, reports, migrations |
+| Frontend Vitest (23) | the HTTP client (token, one shared refresh, error envelope, cache) and display helpers (missing is never 0) |
+| Playwright (15, real browser) | sign-in/out, role navigation, every page, CSV import with mapping and exclusion, faculty isolation, threshold visibility per role, report downloads, interventions, phone layout |
 | `e2e_live.py` (130 checks) | the whole system over HTTP as the browser does it |
 | `verify_live.py` | analytics, attention boundaries and reports recomputed independently from marks it enters itself |
 
@@ -222,11 +224,11 @@ scale has not been load-tested. Full list: [`docs/KNOWN_LIMITATIONS.md`](docs/KN
 ```
 backend/            FastAPI app: modules/{auth,users,organization,students,assessments,
                     imports,analytics,attention,interventions,reports,overview,audit},
-                    Alembic 0001–0008, 1,974 tests, constraints.txt (pinned versions)
+                    Alembic 0001–0008, 2,003 tests, constraints.txt (pinned versions)
 frontend/           Next.js 16 app: app/(app)/* pages, components/, lib/api (typed
                     adapters), lib/auth; tests/ (Vitest), e2e/ (Playwright)
 demo/tlp-uploads/   Sample TLP reports (fictional students) for the end-to-end check
-scripts/            e2e_live.py and verify_live.py: live checks of a running stack
+scripts/            e2e_live.py, verify_live.py (live checks), load_test.py (read-only load test for staging)
 docs/               Data model, import format, analytics spec, contracts, architecture
 .github/            CI workflows, issue templates, pull request template
 docker-compose.yml  db + api + web (local)

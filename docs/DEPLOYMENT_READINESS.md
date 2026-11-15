@@ -108,7 +108,14 @@ not route to the API directly.
   at the proxy) — nothing else in the API keeps per-process state.
 - **No password-reset email.** Administrators/HODs reset passwords in *People*.
 
-## 6. Go-live checklist
+## 6. Staging checklist
+
+Work through [`STAGING_CHECKLIST.md`](STAGING_CHECKLIST.md) on a staging host first: secrets,
+HTTPS, scheduled and off-host backups, a restore drill, log collection and alerts, a load test
+(`scripts/load_test.py`, read-only) and the functional suites — each with the command that proves
+it and a sign-off line.
+
+## 7. Go-live checklist
 
 - [ ] Env file created outside the repo with unique secrets; `.env` from development not copied
 - [ ] `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` passes on the host
@@ -119,4 +126,5 @@ not route to the API directly.
 - [ ] `scripts/e2e_live.py` and `scripts/verify_live.py` pass against a **staging** copy (never production: they create data)
 - [ ] `npm run test:e2e` passes against staging
 - [ ] Load test at the expected class sizes on staging
-- [ ] Decision taken on Git-history rewrite (`SECURITY_AUDIT.md` §5)
+- [ ] Git-history rewrite pushed, or explicitly declined (`GIT_HISTORY_REWRITE.md`)
+- [ ] `STAGING_CHECKLIST.md` completed and signed off

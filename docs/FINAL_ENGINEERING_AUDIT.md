@@ -98,9 +98,10 @@ profile and password → *Settings*); no separate pages were invented.
 
 ## 6. Findings
 
-20 defects found (CRITICAL 1, HIGH 3, MEDIUM 7, LOW 9 — see `BUG_REGISTER.md` for the
-authoritative list), 19 fixed and verified, 1 open (SEC-02, history rewrite, needs your
-decision). Highlights:
+22 defects found (CRITICAL 1, HIGH 4, MEDIUM 8, LOW 9 — see `BUG_REGISTER.md` for the
+authoritative list), 20 fixed and verified, 2 open, both prepared and waiting for your
+approval: SEC-06 (`main`, the default branch, must receive the current code) and SEC-02 (the
+history rewrite, verified locally; the force-push is yours to approve). Highlights:
 
 - **A leaked password still opened the real faculty account** — rotated (SEC-01).
 - **Import could dead-end**: an unrecognised column blocked confirm with nothing on screen to act
@@ -127,6 +128,7 @@ in the frontend: none (the previous audit removed the last one).
 | Authentication & sessions | PASS | unit/API tests; live: login, wrong password, refresh rotation, reuse, logout with expired access token, deactivation, password change; browser: reload keeps session, cookie unreadable |
 | Brute-force protection | PASS (per process) | `test_login_throttle.py`; live before/after |
 | Authorisation / faculty isolation | PASS | 15 reads + 9 writes 404 live; browser |
+| Department threshold scope (2nd round) | PASS | 21 API tests (11 fail on the old code); 2 browser tests incl. a direct 404; 4 live checks |
 | Academic hierarchy & deletion guards | PASS | schema inspection; live |
 | Students | PASS (API) / PARTIAL (UI) | bulk, duplicate, validation, search, pagination live; no create/edit screen (by design, `KNOWN_LIMITATIONS.md`) |
 | Assessments & results | PASS | boundaries (negative, > max, 3 decimals, blank, absent+score) refused, atomic, idempotent live |
@@ -144,4 +146,6 @@ in the frontend: none (the previous audit removed the last one).
 | Docker local | PASS | see testing doc |
 | Production deployment | NOT VERIFIED | configuration reviewed and validated; nothing deployed |
 | Performance at scale | NOT VERIFIED | single-request timings on small data only |
-| Git history secrets | OPEN | needs your decision |
+| Default branch `main` | OPEN — prepared | still ships built-in passwords; merge tested clean, push awaits approval (SEC-06) |
+| Git history secrets | OPEN — prepared | current tree clean and guarded; rewrite verified locally; push awaits approval (`GIT_HISTORY_REWRITE.md`) |
+| Staging preparation | READY TO RUN | `STAGING_CHECKLIST.md`, `scripts/load_test.py` (smoke-tested only) |

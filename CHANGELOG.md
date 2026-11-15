@@ -7,6 +7,17 @@ Dates are the dates of the work.
 
 ## Unreleased
 
+### Engineering decisions — 2026-11-16 (second round)
+
+- Department analytics thresholds are scoped: the Administrator sees every department, everyone
+  else their own department and the departments of the classes they can see; anything else is
+  404. Read-only *Analytics thresholds* card on Settings, built from the server's list.
+- The former built-in passwords are gone from every current file; a guard test fails on any
+  literal credential in runtime code or configuration.
+- The Git-history rewrite is prepared, backed up and rehearsed but **not pushed**; `main` must
+  first receive the current code (it still ships the old defaults). `docs/GIT_HISTORY_REWRITE.md`.
+- `docs/STAGING_CHECKLIST.md` and `scripts/load_test.py` (read-only) for the staging run.
+
 ### Engineering audit and hardening — 2026-11-16
 
 - Security: the last account that still accepted a leaked former password was rotated; sign-in is

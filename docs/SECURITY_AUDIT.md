@@ -53,10 +53,15 @@ student sees *Not found or not in your scope*; their lists show only their own s
 Existing suite: `tests/security/test_authorization_idor.py` and `test_security.py` cover the five
 roles across departments and courses.
 
-**Accepted LOW:** `GET /departments/{id}/settings` (analytics thresholds) is readable by any
-signed-in user — a deliberate, tested decision. Writing is restricted to the department's managers.
-If you prefer it scoped, it is a two-line change in `assessments/router.py`; the test
-`test_settings_api.py::test_write_permissions` would change with it.
+**Department thresholds (SEC-05, implemented 2026-11-16):** `GET /departments/{id}/settings`
+follows one rule, `organization/scope.py::threshold_department_ids` — ADMIN every department;
+everyone else their own department plus the department of every offering they can view (so an
+HOD sees their department, a faculty member their home department and the departments of the
+classes they teach). Out of scope is 404 with the same body as a missing department; writes
+check visibility first (404) and then management rights (403: ADMIN or the department's HOD).
+The workspace lists the readable departments by the same rule and the web app builds its
+thresholds card from it; hiding is never the control (the browser test requests another
+department directly and gets 404).
 
 ## 4. Input and uploads
 
@@ -78,27 +83,38 @@ If you prefer it scoped, it is a two-line change in `assessments/router.py`; the
 |---|---|
 | `.env` | Gitignored; never committed (`git log --all -- '*.env'` empty) |
 | Tracked files | No API keys, tokens or real passwords. `JWT_SECRET_KEY` in `docker-compose.yml` has a development fallback, which the application **refuses** when `APP_ENV=production`; `docker-compose.prod.yml` requires a real one |
-| Former built-in passwords | **Public in Git history** (7 and 5 commits). In current files only as refused values in tests. No account in the running database accepts them (SEC-01 rotated the last one) |
+| Former built-in passwords | **Public in Git history** (introduced in `01beeef`). **Not in any current file** since the second round; a guard test (`test_no_hardcoded_credentials.py`) fails on any literal credential in runtime code or configuration. No account in the running database accepts them (SEC-01 rotated the last one) |
 | Local backups | `~/acadlytics-backups/acadlytics-pre-cleanup-2026-11-14.dump` (outside the repo) contains student names and marks — keep it off shared storage, delete when no longer needed |
 
-### Git-history remediation plan (needs your approval — not done)
+### Git-history remediation — prepared, NOT pushed (needs your explicit approval)
 
-Rewriting history replaces every commit hash after the first leak and requires a force-push of
-`main` and `backend`. Everyone with a clone must re-clone or hard-reset; open pull requests break.
+Status 2026-11-16: everything up to the force-push is done and verified locally. Nothing on
+GitHub has changed. The details and the exact commands are in
+[`GIT_HISTORY_REWRITE.md`](GIT_HISTORY_REWRITE.md).
 
-1. Agree a time with everyone who has cloned `YushBytes/Faculty-Project`; ask them to push or
-   discard local work first.
-2. Make a mirror backup: `git clone --mirror https://github.com/YushBytes/Faculty-Project.git backup.git`.
-3. In a fresh mirror clone, write the two values (one per line, `literal:<value>==>REDACTED`) to a
-   file kept outside the repository, and run
-   `git filter-repo --replace-text <that file>` (git-filter-repo; or BFG `--replace-text`).
-4. Check: `git log --all -S<value>` is empty for both; run the backend suite.
-5. `git push --force --mirror`; ask GitHub Support to purge cached views of old commits if the
-   values must disappear from the web UI as well.
-6. Everyone re-clones. Rotate anything else that ever shared those values.
+Summary of what was inspected:
+
+| Item | Finding |
+|---|---|
+| First commit containing either value | `01beeef` (2026-09-26) |
+| References affected | `main`, `backend` (remote and local), local `release/local-rc`; **not** `frontend/nachiketa-ui`; no tags |
+| Commits rewritten | every descendant of `01beeef` on those branches (36 of 48 commits get new hashes) |
+| Current tree | already clean (second-round commit), so after the rewrite the tip of `backend` has the **same tree** as before — only history changes |
+| GitHub | public; 0 forks; no pull requests (so no undeletable `refs/pull/*`); no branch protection; owner plus 3 collaborators with write access |
+
+**Required first (SEC-06):** `main` — the default branch — is 10 commits behind and still ships
+the built-in passwords in runtime code. It must receive `backend` (tested: no conflicts, identical
+tree) before the rewrite, or the rewrite would leave `"***REMOVED***"` as a new known default.
+
+Impact on collaborators: every clone made before the rewrite still contains the values and has
+history that no longer matches GitHub. Each collaborator must push or save their work first, then
+re-clone (or `git fetch && git reset --hard origin/<branch>` on each branch, after saving local
+changes). Anything based on the old commits (local branches, stashes) has to be rebased onto the
+new history. Public caches (GitHub's commit views of old hashes, search engines, anyone who already
+cloned) cannot be recalled by a rewrite; GitHub Support can be asked to purge cached views.
 
 Because the values no longer open any account (verified), the rewrite reduces disclosure; it does
-not close an active hole. Whether it is worth the disruption is your call.
+not close an active hole.
 
 ## 6. Deployment-dependent controls
 

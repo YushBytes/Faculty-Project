@@ -16,10 +16,10 @@ cannot be completed) · MEDIUM (works, wrongly or with a real risk) · LOW (poli
 |---|---|---|---|
 | BLOCKER | 0 | 0 | 0 |
 | CRITICAL | 1 | 1 | 0 |
-| HIGH | 3 | 2 | 1 (SEC-02, needs your decision) |
-| MEDIUM | 7 | 7 | 0 |
+| HIGH | 4 | 2 | 2 (SEC-02 rewrite and SEC-06 `main` update: prepared, both await your approval) |
+| MEDIUM | 8 | 8 | 0 |
 | LOW | 9 | 9 | 0 |
-| **Total** | **20** | **19** | **1** |
+| **Total** | **22** | **20** | **2** |
 
 Not defects (checked and left as designed) are listed at the end.
 
@@ -37,7 +37,14 @@ Not defects (checked and left as designed) are listed at the end.
 | Verification | Same check afterwards: both former passwords → 401 for both accounts. |
 | Action for you | Set a new password for this faculty member in **People** before they next sign in. |
 
-### SEC-02 · HIGH · Repository — former built-in passwords remain in public Git history (OPEN)
+### SEC-02 · HIGH · Repository — former built-in passwords remain in public Git history (OPEN — prepared, awaiting approval)
+
+**Update 2026-11-16 (second round):** the current tree no longer contains either value (tests and
+`scripts/e2e_live.py` use neutral values; `tests/test_no_hardcoded_credentials.py` now guards
+runtime code and configuration). A backup and a fully rewritten copy of the repository are
+prepared and verified locally; nothing has been force-pushed. Procedure, affected references and
+the impact on collaborators: `SECURITY_AUDIT.md` §5.
+
 
 | | |
 |---|---|
@@ -46,6 +53,26 @@ Not defects (checked and left as designed) are listed at the end.
 | Why open | Removing them from history means rewriting the published `backend` and `main` branches (force-push), which breaks every existing clone. That needs your explicit decision and coordination with anyone who has cloned the repository. |
 | Mitigation in place | No account anywhere in the running database accepts either value (SEC-01). Any other installation made from an older commit must reset its Administrator, HOD, Academic Head and faculty passwords. |
 | Remediation plan | `docs/SECURITY_AUDIT.md` §5. |
+
+### SEC-06 · HIGH · Repository — the default branch `main` still ships built-in passwords (OPEN — awaiting approval)
+
+| | |
+|---|---|
+| Found | 2026-11-16, while preparing the history rewrite |
+| Reproduction | `git grep` on `origin/main` (GitHub's default branch, 10 commits behind `backend`): the bootstrap default for the first accounts, the CLI's demo-password fallback, the Compose default and `.env.example` still use the former built-in passwords. |
+| Impact | Anyone who clones the default branch and starts it gets accounts with a publicly known password. A history rewrite done first would turn those lines into a new well-known value (`***REMOVED***`). |
+| Fix (prepared) | Merge `backend` into `main`. Tested in a separate worktree: no conflicts; the result is the same tree as `backend`. Not pushed: `main` receives reviewed merges, and pushing it needs your approval (`GIT_HISTORY_REWRITE.md` §4.1). |
+
+### SEC-05 · MEDIUM · Authorisation — department thresholds were readable by every signed-in user
+
+| | |
+|---|---|
+| Decision | Previously a deliberate, tested design ("anyone signed in may read"). Changed on your decision of 2026-11-16 to scope-based access. |
+| Reproduction | Faculty of department A: `GET /departments/<B>/settings` → 200 with B's thresholds. |
+| Expected | ADMIN: every department. HOD / Academic Head: their department. Course Coordinator: the departments of their courses. Faculty: their home department and the departments of the classes they teach. Anything else **404**, indistinguishable from a department that does not exist. |
+| Fix | `organization/scope.py::threshold_department_ids` (one rule), enforced in `SettingsService` for reads and before the write check (a department the actor cannot see is 404 for writes too; visible but not manageable stays 403). The analytics engine's own threshold resolution is unchanged. `GET /me/workspace` lists `threshold_departments` (with `can_edit`) computed by the same rule; the web app's new read-only *Analytics thresholds* card on Settings is built from that list. |
+| Regression tests | `tests/test_settings_api.py` rewritten: 21 tests across every role, removal from a class removing access, 404 identical to a missing department, writes, workspace = API rule. Against the old code 11 of them fail. `frontend/e2e/thresholds.spec.ts` (faculty see only their department, read-only, and a direct API request for another department is 404 in the browser; the administrator picks any department and sees its values); `frontend/tests/endpoints.test.ts` (adapter URL; 404 is an error, not an empty list). `scripts/verify_live.py` +5 live checks. |
+| Verification | pytest PASS (2003); Playwright 15/15; verify_live 232/232 on a fresh stack. |
 
 ### IMP-01 · HIGH · Import — a column the system cannot match blocks the import with nothing to act on
 
@@ -200,7 +227,6 @@ password 1/2".
 
 | Item | Why it stays |
 |---|---|
-| Department threshold settings (`GET /departments/{id}/settings`) are readable by any signed-in user | Deliberate and pinned by `tests/test_settings_api.py` ("Anyone signed in may read"). The values are thresholds, not personal data. Writing is restricted. Listed as an accepted LOW risk in `SECURITY_AUDIT.md` for you to revisit. |
 | Faculty can read the audit log | It is filtered to the offerings they can view (`audit/router.py`); faculty B saw none of class A's rows in the live check. |
 | Logout accepts an expired access token when the refresh token is in the body | Intended (preserved, verified live). |
 | `ABSENT`, `MISSING`, `EXEMPT`, `0` | Distinct in storage, API, analytics, reports and on screen — verified live and in the browser. |

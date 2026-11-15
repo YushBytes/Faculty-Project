@@ -4,7 +4,26 @@ Every result here was observed on 2026-11-15/16 on Windows 11, Docker Desktop 29
 5.5.1), PostgreSQL 16 (container), Python 3.12.5, Node 24.18. Nothing is carried over from earlier
 reports without being re-run.
 
-## 1. Results at a glance
+## 0. Second round (2026-11-16): threshold scope, clean tree, staging tools
+
+Re-run after the decisions of 2026-11-16 (scoped department thresholds, removal of the former
+passwords from current files, load-test script). Fresh throwaway stack `acadlytics-check`
+(own volume, ports 55442 / 8012 / 3013), removed afterwards.
+
+| Suite | Result |
+|---|---|
+| Backend pytest | **2003 passed, 0 failed, 0 skipped** (415 s) — +17 threshold-scope tests (11 of them fail on the previous code), +12 credential-guard tests |
+| ruff check / format | clean / 215 files |
+| Frontend lint, typecheck, build | clean, clean, compiled |
+| Vitest | **23 passed** (+2: thresholds adapter) |
+| Playwright (web **container**) | **15 passed** (+2: `thresholds.spec.ts`) |
+| `scripts/e2e_live.py` | **130 / 130** on the empty check stack |
+| `scripts/verify_live.py` | **232 passed, 0 failed** (+4 threshold checks replacing the old "readable by design" check) |
+| `scripts/load_test.py` smoke run | 5 users × 30 s on tiny data: 591 requests, 0 errors, worst p95 503 ms. **A check that the script works, not a load test.** The first smoke run exposed a bug in the script (worker crashes were swallowed); fixed — crashes now fail the run |
+| Guard against the original mistake | `test_no_hardcoded_credentials.py`, run against commit `b6edfd5` (before the passwords were removed), flags the built-in defaults in 5 places |
+| Local application stack | redeployed after a fresh backup; the real class's fingerprint identical before and after (74.12 % over 57 present, 1 absent, 58 results, 6 open flags) |
+
+## 1. Results at a glance (first round)
 
 | Suite | Command | Result |
 |---|---|---|

@@ -23,6 +23,8 @@ the detail behind it.
 | [`TESTING_AND_VERIFICATION.md`](TESTING_AND_VERIFICATION.md) | Every automated suite and live check, how to run it, and the results. |
 | [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) | Authentication, authorisation, uploads, secrets, the Git-history plan, what was not tested. |
 | [`DEPLOYMENT_READINESS.md`](DEPLOYMENT_READINESS.md) | Local / staging / production configuration, what the host must provide, go-live checklist. |
+| [`STAGING_CHECKLIST.md`](STAGING_CHECKLIST.md) | Step-by-step staging verification: secrets, HTTPS, scheduled backups, restore drill, logs, load test, sign-off. |
+| [`GIT_HISTORY_REWRITE.md`](GIT_HISTORY_REWRITE.md) | The prepared (not pushed) removal of the former passwords from Git history: backups, affected refs, collaborator impact, commands. |
 | [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) | What the system does not do, by design or not yet, and what is unmeasured. |
 | [`ACADLYTICS_FINAL_QUALITY_AUDIT.md`](ACADLYTICS_FINAL_QUALITY_AUDIT.md) | The previous (2026-11-14) local release-candidate audit, kept as history. |
 
