@@ -1,6 +1,6 @@
 # Running ACADLYTICS locally
 
-Everything here was run on 2026-11-14 on Windows 11 with Docker Desktop. The application starts
+Everything here was run on 2026-11-14 and re-checked on 2026-11-16 on Windows 11 with Docker Desktop. The application starts
 empty: there is no demo data and there are no built-in passwords.
 
 ## Addresses
@@ -65,7 +65,7 @@ docker compose exec api python -m app.cli create-admin --email you@example.edu -
 | Step | Where | What to look at |
 |---|---|---|
 | 1. HOD uploads the TLP reports | **Import TLP marks** → drop `.xlsx` / `.csv` / TLP `.pdf` files → *Upload and validate* | Each file shows the class it was routed to, what it will set up, and any problem. Nothing is written yet. |
-| 2. Correct or exclude | the file's row list | A mark above the maximum, an unknown register number or a duplicate row blocks the file until fixed or excluded. |
+| 2. Correct, map or exclude | the file's **Review** drawer | A mark above the maximum, an unknown register number or a duplicate row blocks the file until fixed or excluded (an excluded row stays listed with *Include*). A column the system cannot match to an assessment (`Cycle Test 2` for `CT2`) is listed under *Columns*: map it to the assessment or ignore it. |
 | 3. Confirm | *Confirm* | Marks are written in one transaction; analytics and attention are recomputed in the same transaction. |
 | 4. Faculty signs in | after the HOD set their password | The faculty member sees only the classes they teach. |
 | 5. Dashboard | **Dashboard** | Average, pass %, completion, trend, distribution. Absent and missing are shown as such, never as 0. |
@@ -109,11 +109,23 @@ docker compose -p acadlytics-clean down -v --rmi local     # remove it completel
 
 ```bash
 cd backend  && pytest && ruff check . && ruff format --check .
-cd frontend && npm run lint && npm run typecheck && npm run build
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
 The backend suite creates and drops its own database (`TEST_DATABASE_URL`, `acadlytics_test`);
-it never touches `acadlytics`. The frontend has no unit-test runner (`npm test` does not exist).
+it never touches `acadlytics`. Run one pytest session at a time: two sessions share that
+database and break each other.
+
+Against a **throwaway** stack (like the one above), three live checks:
+
+```bash
+python scripts/e2e_live.py    --web http://localhost:3003 --api http://localhost:8002 --admin-email ... --admin-password ...
+python scripts/verify_live.py --api http://localhost:8002 --admin-email ... --admin-password ...   # repeatable
+cd frontend && E2E_WEB=http://localhost:3003 E2E_API=http://localhost:8002 E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm run test:e2e   # repeatable
+```
+
+`verify_live.py` and the Playwright suite create their own uniquely named department on each run,
+so they can run many times on the same stack. Details: `TESTING_AND_VERIFICATION.md`.
 
 ## Backup and restore
 

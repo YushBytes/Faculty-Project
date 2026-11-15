@@ -22,9 +22,9 @@ Every result below was observed on that date. Where something was not checked, i
 | Where | What |
 |---|---|
 | `frontend/components/login.tsx` | A "Sign-in accounts" list with four `@acadlytics.dev` addresses and a *Use* button each |
-| `backend/app/bootstrap.py` | On an empty database: a CSE department and Administrator, HOD and Academic Head accounts, all with the built-in password `Demo@2026pass` |
-| `backend/app/core/config.py`, `imports/provision.py` | Every faculty account created from a TLP report got the built-in password `Faculty@2026` |
-| `backend/app/cli.py` | `seed-demo` fell back to `Demo@2026pass` |
+| `backend/app/bootstrap.py` | On an empty database: a CSE department and Administrator, HOD and Academic Head accounts, all with the built-in password *(former built-in password 1, redacted)* |
+| `backend/app/core/config.py`, `imports/provision.py` | Every faculty account created from a TLP report got the built-in password *(former built-in password 2, redacted)* |
+| `backend/app/cli.py` | `seed-demo` fell back to *(former built-in password 1, redacted)* |
 | `docker-compose.yml`, `.env.example`, `README.md` | The same two passwords as defaults and in a table of accounts |
 | `frontend/app/(app)/sections/page.tsx` | A KPI "Sections below 55%" with a threshold that exists nowhere in the backend |
 | `frontend/app/page.tsx` | A landing illustration captioned "−9.8 pp drop" and the text "all ninety-seven" |

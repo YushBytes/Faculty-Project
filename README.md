@@ -91,6 +91,11 @@ From each file the platform reads and sets up, reusing anything that already exi
 2. the file name — `DSA_FJ-II_A1.xlsx`, `CSE sec B2.pdf` → A1, B2, else
 3. you: the file shows **Section needed** with a box to type it.
 
+Plain mark sheets (not TLP) and the class's own template (*Class → Assessments → Marks
+template*) go through the same page from the class's **Upload** button. In **Review**, every
+problem is listed: cell errors can be corrected or the row excluded (and included again), and a
+column the system cannot match to an assessment can be mapped to one or ignored.
+
 A file name that contradicts where its students already are is stopped with the reason.
 Existing student names are never overwritten. **Discarding** a staged file also removes whatever
 it set up that nothing else uses, so a wrong file leaves no trace.
@@ -127,16 +132,24 @@ The web app forwards `/api/v1/*` to `ACADLYTICS_API_URL` (default `http://localh
 ## 5. Checks
 
 ```bash
-cd backend && pytest && ruff check . && ruff format --check .
-cd frontend && npm run lint && npm run typecheck && npm run build
+cd backend  && pytest && ruff check . && ruff format --check .
+cd frontend && npm run lint && npm run typecheck && npm test && npm run build
 
-# the whole system over HTTP, against a throwaway stack (docs/LOCAL_DEMO_GUIDE.md)
-python scripts/e2e_live.py --web <web url> --api <api url> --admin-email <email> --admin-password <password>
+# against a THROWAWAY stack only (they create data; docs/TESTING_AND_VERIFICATION.md)
+python scripts/e2e_live.py    --web <web url> --api <api url> --admin-email <email> --admin-password <password>
+python scripts/verify_live.py --api <api url> --admin-email <email> --admin-password <password>
+cd frontend && E2E_WEB=<web url> E2E_API=<api url> E2E_ADMIN_EMAIL=<email> E2E_ADMIN_PASSWORD=<password> npm run test:e2e
 ```
 
-The backend suite (1,950+ tests) runs against real PostgreSQL: auth, the five-role scope and
-IDOR checks, TLP import in all three formats, set-up from the reports, routing and title-block verification, aggregate
-analytics consistency with the class engine, report downloads, migrations, seed.
+| Suite | What it covers |
+|---|---|
+| Backend pytest (1,974 tests, real PostgreSQL) | auth and the throttle, the five-role scope and IDOR, TLP import in three formats, validation and atomicity, 1,120 analytics engine tests, reports, migrations |
+| Frontend Vitest (21) | the HTTP client (token, one shared refresh, error envelope, cache) and display helpers (missing is never 0) |
+| Playwright (13, real browser) | sign-in/out, role navigation, every page, CSV import with mapping and exclusion, faculty isolation, report downloads, interventions, phone layout |
+| `e2e_live.py` (130 checks) | the whole system over HTTP as the browser does it |
+| `verify_live.py` | analytics, attention boundaries and reports recomputed independently from marks it enters itself |
+
+Results of the last full run: [`docs/TESTING_AND_VERIFICATION.md`](docs/TESTING_AND_VERIFICATION.md).
 
 ## 6. How it works
 
@@ -161,6 +174,9 @@ section, course, faculty member, coordinator, department or the institution with
 functions — so a department average is the same definition over more students, the dashboard and
 the report come from one object, and no number is computed twice in two ways.
 
+**Sign-in protection.** Ten wrong passwords for one account within 15 minutes and that account
+is refused (429) until the window passes. Passwords are Argon2id; there are no built-in passwords.
+
 **Semantics that never bend:** absent, exempt and missing are never zero; pass % is over students
 with a result (absence is reported as completion); trends need enough assessments or say
 "insufficient data"; attention is seven explained rules, not a score; intervention outcomes are
@@ -178,23 +194,43 @@ observations, never causes.
 | A file shows **Section needed** | TLP reports do not name the section: type it in the box, or name the file with it (`…_A1.xlsx`). |
 | "The file name says section A2, but … are already in section A1" | The file is probably mislabelled; rename it, or type the right section. |
 | Need fictional data for development | Never loaded automatically. On an **empty, throwaway** database only: `docker compose exec -e ACADLYTICS_DEMO_PASSWORD=<8+ chars> api python -m app.cli seed-demo` (refused in production and on a database that has data; do not mix with real reports). |
+| "Too many failed sign-in attempts" | Ten wrong passwords for that account within 15 minutes. Wait, or have an Administrator/HOD set a new password in *People*. |
 | Signed out on every refresh | You are on plain http with `NODE_ENV=production` outside Compose: set `ACADLYTICS_INSECURE_COOKIES=1` (local only). |
 | Docker Hub pull errors ("HTTP response to HTTPS client") | Transient registry/proxy issue; run `docker compose up -d --build` again. |
 | A PDF is rejected | Only SRM TLP-format text PDFs are read; upload the Excel/CSV export for other layouts. |
 
-## 8. Repository
+## 8. Deployment
+
+Not deployed anywhere yet. `docker-compose.prod.yml` (on top of `docker-compose.yml`) is the
+production configuration: it requires every secret, keeps PostgreSQL off the network, binds the
+app to 127.0.0.1 behind an HTTPS reverse proxy and makes the session cookie Secure. What the host
+must still provide (HTTPS, backups, a proxy rate limit, logs) and the go-live checklist are in
+[`docs/DEPLOYMENT_READINESS.md`](docs/DEPLOYMENT_READINESS.md).
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file /secure/acadlytics.env up -d --build
+```
+
+## 9. Limitations
+
+Assessment-level marks only (no question/topic analytics); no prediction, ML or LLM output;
+intervention outcomes are observations; no password-reset email; performance at institutional
+scale has not been load-tested. Full list: [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+
+## 10. Repository
 
 ```
 backend/            FastAPI app: modules/{auth,users,organization,students,assessments,
                     imports,analytics,attention,interventions,reports,overview,audit},
-                    Alembic 0001–0008, 1,950+ tests
+                    Alembic 0001–0008, 1,974 tests, constraints.txt (pinned versions)
 frontend/           Next.js 16 app: app/(app)/* pages, components/, lib/api (typed
-                    adapters), lib/auth
+                    adapters), lib/auth; tests/ (Vitest), e2e/ (Playwright)
 demo/tlp-uploads/   Sample TLP reports (fictional students) for the end-to-end check
-scripts/            e2e_live.py: live end-to-end check of a running stack
+scripts/            e2e_live.py and verify_live.py: live checks of a running stack
 docs/               Data model, import format, analytics spec, contracts, architecture
 .github/            CI workflows, issue templates, pull request template
-docker-compose.yml  db + api + web
+docker-compose.yml  db + api + web (local)
+docker-compose.prod.yml  production overrides
 .env.example        The tracked template for .env
 ```
 
@@ -204,6 +240,7 @@ analytics changes, `frontend/*` for web app work.
 | | |
 |---|---|
 | **Documentation index** | [`docs/README.md`](docs/README.md) |
+| **Current state, audit and readiness** | [`docs/FINAL_ENGINEERING_AUDIT.md`](docs/FINAL_ENGINEERING_AUDIT.md) |
 | **Contributing and local checks** | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | **Reporting a vulnerability** | [`SECURITY.md`](SECURITY.md) |
 | **What was built, in order** | [`CHANGELOG.md`](CHANGELOG.md) |

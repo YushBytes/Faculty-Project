@@ -18,7 +18,13 @@ the detail behind it.
 |---|---|
 | [`LOCAL_DEMO_GUIDE.md`](LOCAL_DEMO_GUIDE.md) | Start, stop, first sign-in, a teacher's walk-through, the end-to-end check, backup and restore. |
 | [`INTEGRATION_AUDIT.md`](INTEGRATION_AUDIT.md) | Which page calls which API, and how the web app talks to the backend. |
-| [`ACADLYTICS_FINAL_QUALITY_AUDIT.md`](ACADLYTICS_FINAL_QUALITY_AUDIT.md) | What was cleaned, fixed and tested for the local release candidate, with results and open issues. |
+| [`FINAL_ENGINEERING_AUDIT.md`](FINAL_ENGINEERING_AUDIT.md) | **Start here for the current state.** Architecture, every route and endpoint, entities, what was found and fixed, readiness per subsystem. |
+| [`BUG_REGISTER.md`](BUG_REGISTER.md) | Every defect found in the 2026-11-16 audit: reproduction, root cause, fix, regression test, verification. |
+| [`TESTING_AND_VERIFICATION.md`](TESTING_AND_VERIFICATION.md) | Every automated suite and live check, how to run it, and the results. |
+| [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) | Authentication, authorisation, uploads, secrets, the Git-history plan, what was not tested. |
+| [`DEPLOYMENT_READINESS.md`](DEPLOYMENT_READINESS.md) | Local / staging / production configuration, what the host must provide, go-live checklist. |
+| [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) | What the system does not do, by design or not yet, and what is unmeasured. |
+| [`ACADLYTICS_FINAL_QUALITY_AUDIT.md`](ACADLYTICS_FINAL_QUALITY_AUDIT.md) | The previous (2026-11-14) local release-candidate audit, kept as history. |
 
 ## Architecture and history
 
