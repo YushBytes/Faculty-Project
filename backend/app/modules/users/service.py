@@ -35,6 +35,8 @@ MANAGEABLE_BY: dict[Role, frozenset[Role]] = {
 }
 LOOKUP_ROLES = frozenset((Role.ADMIN, Role.HOD, Role.ACADEMIC_HEAD, Role.COURSE_COORDINATOR))
 HEAD_CONFLICT = "That department already has an active {role}; deactivate or reassign them first."
+# There is no transfer operation (docs/KNOWN_LIMITATIONS.md): the message must not promise one.
+ADMIN_CONFLICT = "There is already an active Administrator; there can be only one."
 
 
 def normalise_email(email: str) -> str:
@@ -255,10 +257,12 @@ class UserService:
 
     def _check_single_admin(self, role: Role) -> None:
         if role is Role.ADMIN and self._users.count_active_admins() >= 1:
-            raise ConflictError("There is exactly one administrator; transfer the role instead.")
+            raise ConflictError(ADMIN_CONFLICT)
 
     @staticmethod
     def _conflict_message(email: str, role: Role, employee_code: str | None) -> str:
+        if role is Role.ADMIN:
+            return ADMIN_CONFLICT + f" (or email '{email}' is already in use)"
         if role in (Role.HOD, Role.ACADEMIC_HEAD):
             name = "HOD" if role is Role.HOD else "Academic Head"
             return HEAD_CONFLICT.format(role=name) + (
