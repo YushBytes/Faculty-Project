@@ -3,12 +3,22 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.users.models import Role
+
 
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=128)
+    role: Role | None = Field(
+        default=None,
+        description=(
+            "Optional role confirmation (the web sign-in page always sends it). Checked against "
+            "the account's stored role after the password; a mismatch is refused and no tokens "
+            "are issued. It never grants anything: permissions always come from the stored role."
+        ),
+    )
 
 
 class RefreshRequest(BaseModel):

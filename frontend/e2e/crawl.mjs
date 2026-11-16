@@ -49,6 +49,7 @@ current = "/login";
 await page.goto(`${WEB}/login`);
 await page.locator('input[type="email"], input[name="email"]').first().fill(process.env.EMAIL);
 await page.locator('input[type="password"]').first().fill(process.env.PASSWORD);
+await page.getByRole("radio", { name: process.env.ROLE_LABEL ?? "Administrator", exact: true }).check();
 await page.getByRole("button", { name: /sign in/i }).click();
 await page.waitForURL(/dashboard/, { timeout: 20000 });
 

@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { signIn, state, watch } from "./helpers";
+import { roleOption, signIn, state, watch } from "./helpers";
 
 test.describe("authentication", () => {
   test("a wrong password is refused with a clear message and no session", async ({ page }) => {
     const s = state();
-    await signIn(page, s.facultyA.email, "not-the-password");
+    await signIn(page, s.facultyA, undefined, { password: "not-the-password" });
     await expect(page.locator(".notice-error")).toHaveText(/do not match an active account/);
     await expect(page).toHaveURL(/\/login/);
     await page.goto("/dashboard");
@@ -14,7 +14,7 @@ test.describe("authentication", () => {
   test("sign in, reload keeps the session, sign out ends it", async ({ page }) => {
     const s = state();
     const w = watch(page);
-    await signIn(page, s.facultyA.email, s.facultyA.password);
+    await signIn(page, s.facultyA);
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByText("Faculty", { exact: true }).first()).toBeVisible();
@@ -39,6 +39,7 @@ test.describe("authentication", () => {
     await expect(page).toHaveURL(/\/login\?next=/);
     await page.getByLabel("Email").fill(s.facultyA.email);
     await page.getByLabel("Password", { exact: true }).fill(s.facultyA.password);
+    await roleOption(page, "FACULTY").check();
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(new RegExp(`/classes/${s.classA}`), { timeout: 20_000 });
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Browser Test Course");
@@ -46,9 +47,9 @@ test.describe("authentication", () => {
 
   test("faculty navigation offers only what faculty may do", async ({ page }) => {
     const s = state();
-    await signIn(page, s.facultyA.email, s.facultyA.password);
+    await signIn(page, s.facultyA);
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
-    const nav = page.getByRole("navigation");
+    const nav = page.getByRole("navigation", { name: "Main" });
     await expect(nav.getByRole("link", { name: "My classes" })).toBeVisible();
     for (const hidden of ["Departments", "People", "Academic structure", "Audit log", "Team & roles"]) {
       await expect(nav.getByRole("link", { name: hidden })).toHaveCount(0);

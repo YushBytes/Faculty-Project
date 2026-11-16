@@ -17,7 +17,7 @@ async function settingsStatus(page: Page, departmentId: string): Promise<number>
 
 test("faculty see their own department's thresholds, read-only, and nothing else", async ({ page }) => {
   const s = state();
-  await signIn(page, s.facultyA.email, s.facultyA.password, "/settings");
+  await signIn(page, s.facultyA, "/settings");
   await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible({ timeout: 20_000 });
   const card = page.locator(".card").filter({ hasText: "Analytics thresholds" });
   await expect(card).toBeVisible();
@@ -35,7 +35,7 @@ test("faculty see their own department's thresholds, read-only, and nothing else
 
 test("the administrator can choose any department and sees its own values", async ({ page }) => {
   const s = state();
-  await signIn(page, s.admin.email, s.admin.password, "/settings");
+  await signIn(page, s.admin, "/settings");
   await expect(page.getByRole("heading", { level: 1, name: "Your account" })).toBeVisible({ timeout: 20_000 });
   const card = page.locator(".card").filter({ hasText: "Analytics thresholds" });
   await expect(card).toContainText("You can change them");

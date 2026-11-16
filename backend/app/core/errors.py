@@ -48,6 +48,13 @@ class AuthenticationError(AppError):
     code = "not_authenticated"
 
 
+class RoleMismatchError(AuthenticationError):
+    """Correct email and password, but the role chosen on the sign-in page is not the account's.
+    Raised only after the password was verified, so it tells nothing to someone without it."""
+
+    code = "role_mismatch"
+
+
 class PermissionDeniedError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "permission_denied"

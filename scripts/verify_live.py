@@ -742,6 +742,22 @@ def main() -> int:
     check("results are intact after the refused deletions", still["present"] == 8, still)
 
     # ---------------------------------------------------------------- sessions
+    section("Sign-in role confirmation (API: optional, checked, never granting)")
+    fb_email, fb_pw = people["fb"]["email"], people["fb"]["password"]
+    r_ok = Client(args.api).call("POST", "/auth/login", {"email": fb_email, "password": fb_pw, "role": "FACULTY"}, token=None)
+    check("correct role signs in", r_ok.status == 200, r_ok.status)
+    r_bad = Client(args.api).call("POST", "/auth/login", {"email": fb_email, "password": fb_pw, "role": "ADMIN"}, token=None)
+    check("faculty claiming ADMIN: 401 role_mismatch, no tokens",
+          r_bad.status == 401 and r_bad.code == "role_mismatch" and b"access_token" not in r_bad.body, r_bad.status)
+    r_unknown = Client(args.api).call("POST", "/auth/login", {"email": fb_email, "password": fb_pw, "role": "ROOT"}, token=None)
+    check("unknown role value is 422", r_unknown.status == 422, r_unknown.status)
+    r_none = Client(args.api).call("POST", "/auth/login", {"email": fb_email, "password": fb_pw}, token=None)
+    check("no role: existing behaviour (200)", r_none.status == 200, r_none.status)
+    r_wrongpw = Client(args.api).call("POST", "/auth/login", {"email": fb_email, "password": "nope-nope", "role": "ADMIN"}, token=None)
+    check("wrong password stays generic whatever the role", r_wrongpw.status == 401 and r_wrongpw.code == "not_authenticated", r_wrongpw.code)
+    promote = admin.patch(f"/users/{people['fb']['id']}", {"role": "ADMIN"})
+    check("promoting someone to Administrator is 409 (exactly one)", promote.status == 409, promote.status)
+
     section("Sessions")
     c = Client(args.api)
     c.login(people["fb"]["email"], people["fb"]["password"])
