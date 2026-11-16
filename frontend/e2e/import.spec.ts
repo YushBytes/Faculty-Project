@@ -21,7 +21,7 @@ test("CSV import: preview, map, exclude, confirm, and the class shows the marks"
     `${d.register_number},${d.full_name},55`,
   ].join("\n");
 
-  await signIn(page, s.facultyA.email, s.facultyA.password, `/import?offering_id=${s.classA}`);
+  await signIn(page, s.facultyA, `/import?offering_id=${s.classA}`);
   await expect(page.getByRole("heading", { level: 1, name: "Import TLP marks" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Uploading into 21E/)).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles({ name: "ct2-marks.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
@@ -70,7 +70,7 @@ test("CSV import: preview, map, exclude, confirm, and the class shows the marks"
 
 test("a file that cannot be read is refused with a reason and writes nothing", async ({ page }) => {
   const s = state();
-  await signIn(page, s.facultyA.email, s.facultyA.password, `/import?offering_id=${s.classA}`);
+  await signIn(page, s.facultyA, `/import?offering_id=${s.classA}`);
   await expect(page.getByRole("heading", { level: 1, name: "Import TLP marks" })).toBeVisible({ timeout: 20_000 });
   await page.locator('input[type="file"]').setInputFiles({ name: "broken.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("PK\u0003\u0004 not really a workbook") });
   await page.getByRole("button", { name: /Upload and validate 1 file/ }).click();

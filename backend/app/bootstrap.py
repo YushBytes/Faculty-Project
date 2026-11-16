@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.errors import ConflictError
 from app.modules.users.models import Role, User
 from app.modules.users.schemas import UserCreate
 from app.modules.users.service import UserService
@@ -67,7 +68,16 @@ def bootstrap(session: Session) -> list[tuple[str, str]]:
             for e in exc.errors(include_input=False)
         )
         raise BootstrapError(f"Invalid administrator settings: {reasons}") from None
-    user = UserService(session).create_user(data)
+    try:
+        user = UserService(session).create_user(data)
+    except ConflictError:
+        # Another process (a second API replica, or create-admin) created the Administrator a
+        # moment ago and the database's single-Administrator index refused this one. That is
+        # the outcome we wanted, not a start-up failure.
+        session.rollback()
+        if not needs_admin(session):
+            return []
+        raise
     return [(user.email, Role.ADMIN.value)]
 
 

@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useScope } from "@/lib/auth/session";
 import { useOverview, periodQuery } from "@/components/overview";
-import { BarCell, Card, DataTable, ErrorState, LoadingDashboard, PageHead, Badge } from "@/components/ui";
+import { BarCell, Card, DataTable, Empty, ErrorState, LoadingDashboard, PageHead, Badge } from "@/components/ui";
 import { GroupedBars } from "@/components/charts";
 import { num, pctOf } from "@/lib/format";
 
@@ -23,6 +24,7 @@ export default function Departments() {
           rows={rows}
           rowKey={(r) => r.id}
           onRowClick={(r) => router.push(`/departments/${r.id}${periodQuery(scope)}`)}
+          empty={<Empty title="No department has results in this period">Departments are created under <Link href="/admin/structure" style={{ color: "var(--accent)" }}>Academic structure</Link>; they appear here once they have classes with published marks in the selected period.</Empty>}
           columns={[
             { key: "label", label: "Department", sort: (r) => r.label, render: (r) => <span className="strong">{r.label}<span className="sub">{r.name}</span></span> },
             { key: "courses", label: "Courses", align: "right", render: (r) => r.courses },

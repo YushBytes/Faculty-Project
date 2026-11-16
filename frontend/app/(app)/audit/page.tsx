@@ -3,7 +3,7 @@
 import { auditApi } from "@/lib/api/endpoints";
 import { useUrlState } from "@/lib/auth/session";
 import { useApi } from "@/lib/hooks/use-api";
-import { Badge, DataTable, ErrorState, LoadingBlock, PageHead } from "@/components/ui";
+import { Badge, DataTable, Empty, ErrorState, LoadingBlock, PageHead } from "@/components/ui";
 import { dateTime, num } from "@/lib/format";
 
 const ENTITIES = ["assessment_result", "import_batch", "user", "course", "offering", "assessment", "student", "setting"];
@@ -23,7 +23,9 @@ export default function Audit() {
       </div>
       {error ? <ErrorState error={error} retry={reload} /> : loading || !data ? <LoadingBlock rows={12} /> : (
         <>
-          <DataTable rows={data.items} rowKey={(r) => r.id} columns={[
+          <DataTable rows={data.items} rowKey={(r) => r.id}
+            empty={<Empty title={entity ? `No ${entity.replaceAll("_", " ")} changes recorded in your scope` : "No changes recorded in your scope yet"}>{entity ? "Choose “Everything” to see all recorded changes." : "Entries appear as marks, imports, roles, assignments and settings change."}</Empty>}
+            columns={[
             { key: "when", label: "When", render: (r) => dateTime(r.created_at) },
             { key: "what", label: "Change", render: (r) => <span className="strong">{r.entity.replaceAll("_", " ")} <Badge>{r.action.replaceAll("_", " ")}</Badge></span> },
             { key: "old", label: "Before", render: (r) => <span style={{ fontSize: 13.5 }}>{show(r.old_value)}</span> },

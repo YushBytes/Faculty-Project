@@ -62,6 +62,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("role IN ('HOD', 'ACADEMIC_HEAD') AND is_active"),
         ),
+        # At most one active Administrator in the whole institution (migration 0009). The
+        # service checks first for a clear message; this stops two concurrent writes.
+        Index(
+            "uq_users_single_active_admin",
+            "role",
+            unique=True,
+            postgresql_where=text("role = 'ADMIN' AND is_active"),
+        ),
     )
 
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)

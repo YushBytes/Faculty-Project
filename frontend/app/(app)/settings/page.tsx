@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { KeyRound, LogOut, SlidersHorizontal } from "lucide-react";
+import { Compass, KeyRound, LogOut, SlidersHorizontal } from "lucide-react";
+import { replayTour } from "@/components/tour";
 import { accountApi, orgApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/http";
 import { useSession, useWorkspace } from "@/lib/auth/session";
@@ -36,6 +37,9 @@ export default function Settings() {
           <Card title="Default academic period" subtitle="Remembered on this device"><PeriodSelect /></Card>
           <Card title="What you can do" subtitle="Enforced by the server on every request"><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{caps.map((c) => <Badge key={c}>{c}</Badge>)}</div></Card>
           <Thresholds />
+          <Card title="Welcome tour" subtitle="A short walk through the parts of ACADLYTICS your role uses.">
+            <button className="btn" onClick={replayTour}><Compass size={16} /> Replay tour</button>
+          </Card>
           <ChangePassword />
           <Card title="Session" subtitle="Signed in with a short-lived access token; the refresh token is an httpOnly cookie this page cannot read.">
             <button className="btn btn-danger" onClick={async () => { await logout(); router.replace("/login"); }}><LogOut size={16} /> Sign out</button>

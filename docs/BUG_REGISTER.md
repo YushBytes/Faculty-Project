@@ -16,10 +16,10 @@ cannot be completed) · MEDIUM (works, wrongly or with a real risk) · LOW (poli
 |---|---|---|---|
 | BLOCKER | 0 | 0 | 0 |
 | CRITICAL | 1 | 1 | 0 |
-| HIGH | 4 | 2 | 2 (SEC-02 rewrite and SEC-06 `main` update: prepared, both await your approval) |
-| MEDIUM | 8 | 8 | 0 |
+| HIGH | 4 | 3 | 1 (SEC-02: history rewrite prepared; the force-push awaits your approval) |
+| MEDIUM | 9 | 9 | 0 |
 | LOW | 9 | 9 | 0 |
-| **Total** | **22** | **20** | **2** |
+| **Total** | **23** | **22** | **1** |
 
 Not defects (checked and left as designed) are listed at the end.
 
@@ -54,7 +54,10 @@ the impact on collaborators: `SECURITY_AUDIT.md` §5.
 | Mitigation in place | No account anywhere in the running database accepts either value (SEC-01). Any other installation made from an older commit must reset its Administrator, HOD, Academic Head and faculty passwords. |
 | Remediation plan | `docs/SECURITY_AUDIT.md` §5. |
 
-### SEC-06 · HIGH · Repository — the default branch `main` still ships built-in passwords (OPEN — awaiting approval)
+### SEC-06 · HIGH · Repository — the default branch `main` still shipped built-in passwords (FIXED 2026-11-16)
+
+**Resolved:** approved and done — `main` received `backend` by a normal merge, `f8f91f3`, same tree, GitHub CI green on both workflows. No history was rewritten.
+
 
 | | |
 |---|---|
@@ -62,6 +65,17 @@ the impact on collaborators: `SECURITY_AUDIT.md` §5.
 | Reproduction | `git grep` on `origin/main` (GitHub's default branch, 10 commits behind `backend`): the bootstrap default for the first accounts, the CLI's demo-password fallback, the Compose default and `.env.example` still use the former built-in passwords. |
 | Impact | Anyone who clones the default branch and starts it gets accounts with a publicly known password. A history rewrite done first would turn those lines into a new well-known value (`***REMOVED***`). |
 | Fix (prepared) | Merge `backend` into `main`. Tested in a separate worktree: no conflicts; the result is the same tree as `backend`. Not pushed: `main` receives reviewed merges, and pushing it needs your approval (`GIT_HISTORY_REWRITE.md` §4.1). |
+
+### SEC-07 · MEDIUM · Users — two concurrent writes could create two active Administrators (FIXED 2026-11-16)
+
+| | |
+|---|---|
+| Found | Product audit of 2026-11-16 |
+| Reproduction | `tests/test_single_administrator.py` with the new index removed: two transactions that both pass the service's count check before either writes (the window when no Administrator exists: two API processes bootstrapping, or bootstrap racing `create-admin`) → **two active Administrators** committed. |
+| Root cause | The rule was a count-then-write check in the service only; HOD and Academic Head had a database index, the Administrator did not. |
+| Fix | Migration `0009`: partial unique index `uq_users_single_active_admin`. Conflict message made accurate ("there can be only one" — the old text promised a transfer that does not exist). Bootstrap treats losing that race as success. The UI no longer offers Administrator as a role for anyone else. |
+| Regression tests | 12 tests in `test_single_administrator.py`, including three real-concurrency tests (creations, promotions, bootstraps). |
+| Verification | Without the index: 4 failed (two winners). With it: 12 passed. Migration applied to the local database after a backup: one Administrator before and after, all row counts identical. |
 
 ### SEC-05 · MEDIUM · Authorisation — department thresholds were readable by every signed-in user
 

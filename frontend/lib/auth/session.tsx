@@ -13,7 +13,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { onUnauthenticated, refreshSession, sessionLogin, sessionLogout } from "@/lib/api/http";
 import { workspaceApi } from "@/lib/api/endpoints";
-import type { ScopeFilters, SemesterPeriod, Workspace } from "@/lib/api/types";
+import type { Role, ScopeFilters, SemesterPeriod, Workspace } from "@/lib/api/types";
 
 type Status = "loading" | "anonymous" | "authenticated";
 type Toast = { id: number; title: string; detail?: string; tone: "success" | "error" | "info" };
@@ -24,7 +24,7 @@ type SessionValue = {
   workspace: Workspace | null;
   period: Period;
   setPeriod: (period: Period) => void;
-  login: (email: string, password: string) => Promise<Workspace>;
+  login: (email: string, password: string, role: Role) => Promise<Workspace>;
   logout: () => Promise<void>;
   reloadWorkspace: () => Promise<void>;
   notify: (title: string, detail?: string, tone?: Toast["tone"]) => void;
@@ -81,8 +81,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [adopt]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    await sessionLogin(email, password);
+  const login = useCallback(async (email: string, password: string, role: Role) => {
+    await sessionLogin(email, password, role);
     const ws = await workspaceApi.get();
     adopt(ws);
     return ws;

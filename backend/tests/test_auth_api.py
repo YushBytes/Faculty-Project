@@ -72,9 +72,19 @@ class TestLogin:
 
     def test_unknown_fields_rejected(self, client: TestClient, faculty: User) -> None:
         response = client.post(
-            LOGIN, json={"email": faculty.email, "password": DEFAULT_PASSWORD, "role": "ADMIN"}
+            LOGIN, json={"email": faculty.email, "password": DEFAULT_PASSWORD, "is_admin": True}
         )
         assert response.status_code == 422
+
+    def test_a_role_field_cannot_elevate(self, client: TestClient, faculty: User) -> None:
+        # `role` became a known, optional confirmation field (sign-in page role selector). It
+        # still cannot elevate anyone: a faculty member claiming ADMIN gets no tokens.
+        response = client.post(
+            LOGIN, json={"email": faculty.email, "password": DEFAULT_PASSWORD, "role": "ADMIN"}
+        )
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "role_mismatch"
+        assert "access_token" not in response.text
 
 
 class TestMe:

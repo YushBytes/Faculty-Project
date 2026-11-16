@@ -125,7 +125,7 @@ in the frontend: none (the previous audit removed the last one).
 
 | Subsystem | Status | Evidence |
 |---|---|---|
-| Authentication & sessions | PASS | unit/API tests; live: login, wrong password, refresh rotation, reuse, logout with expired access token, deactivation, password change; browser: reload keeps session, cookie unreadable |
+| Authentication & sessions | PASS (now also with the sign-in role check) | unit/API tests; live: login, wrong password, refresh rotation, reuse, logout with expired access token, deactivation, password change; browser: reload keeps session, cookie unreadable |
 | Brute-force protection | PASS (per process) | `test_login_throttle.py`; live before/after |
 | Authorisation / faculty isolation | PASS | 15 reads + 9 writes 404 live; browser |
 | Department threshold scope (2nd round) | PASS | 21 API tests (11 fail on the old code); 2 browser tests incl. a direct 404; 4 live checks |
@@ -146,6 +146,9 @@ in the frontend: none (the previous audit removed the last one).
 | Docker local | PASS | see testing doc |
 | Production deployment | NOT VERIFIED | configuration reviewed and validated; nothing deployed |
 | Performance at scale | NOT VERIFIED | single-request timings on small data only |
-| Default branch `main` | OPEN — prepared | still ships built-in passwords; merge tested clean, push awaits approval (SEC-06) |
+| Default branch `main` | PASS | merged by normal push `f8f91f3`, same tree as backend, CI green (SEC-06) |
+| Exactly one Administrator (3rd round) | PASS | service checks + DB index `0009`; real-concurrency tests (fail without the index, pass with it); applied to the local database with identical row counts |
+| Sign-in role confirmation (3rd round) | PASS | 26 API tests, 6 browser tests, e2e_live and verify_live checks; local stack checked |
+| Navigation, quick actions, empty states, help, tour (3rd round) | PASS | Vitest preservation tests per role; 6 browser tests; every sidebar page and quick action opened in the browser |
 | Git history secrets | OPEN — prepared | current tree clean and guarded; rewrite verified locally; push awaits approval (`GIT_HISTORY_REWRITE.md`) |
 | Staging preparation | READY TO RUN | `STAGING_CHECKLIST.md`, `scripts/load_test.py` (smoke-tested only) |

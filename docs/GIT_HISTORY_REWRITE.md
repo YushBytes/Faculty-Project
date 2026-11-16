@@ -1,8 +1,8 @@
 # Removing the former built-in passwords from Git history
 
-Status 2026-11-16: **prepared and rehearsed; nothing pushed.** GitHub's references were checked
-after the rehearsal and are unchanged. Two steps need your explicit approval (§4): updating `main`,
-then the force-push.
+Status 2026-11-16: **prepared and rehearsed; nothing force-pushed.** Step 4.1 (updating `main`) was
+approved and done: `main` is `f8f91f3`, a normal merge with the same tree as `backend`. The
+force-push (4.4) still needs your explicit approval.
 
 The two passwords were built into early versions (bootstrap, CLI, Compose, `.env.example`,
 README, tests). Since `ccae1de` no code uses them, since SEC-01 no account accepts them, and since

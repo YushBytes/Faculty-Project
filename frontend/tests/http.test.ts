@@ -157,10 +157,10 @@ describe("GET cache", () => {
     let who = "A";
     routeFetch((url) => (url === "/api/session/login" ? json(200, { access_token: `tok-${who}` }) : json(200, { who })));
     const { api, sessionLogin } = await client();
-    await sessionLogin("a@x", "pw");
+    await sessionLogin("a@x", "pw", "FACULTY");
     expect(await api("/me/workspace")).toEqual({ who: "A" });
     who = "B";
-    await sessionLogin("b@x", "pw");
+    await sessionLogin("b@x", "pw", "HOD");
     expect(await api("/me/workspace")).toEqual({ who: "B" });
   });
 
@@ -178,8 +178,23 @@ describe("sign-in", () => {
   it("a wrong password raises the server's 401 without storing a token", async () => {
     routeFetch((url) => (url === "/api/session/login" ? json(401, { error: { code: "not_authenticated", message: "Invalid email or password.", details: [] } }) : json(200, {})));
     const { api, sessionLogin } = await client();
-    await expect(sessionLogin("a@x", "wrong")).rejects.toMatchObject({ status: 401, message: "Invalid email or password." });
+    await expect(sessionLogin("a@x", "wrong", "FACULTY")).rejects.toMatchObject({ status: 401, message: "Invalid email or password." });
     await api("/anything");
     expect((calls.at(-1)!.init.headers as Record<string, string>).authorization).toBeUndefined();
+  });
+
+  it("sends the chosen role with the credentials, to the session route only", async () => {
+    routeFetch(() => json(200, { access_token: "tok" }));
+    const { sessionLogin } = await client();
+    await sessionLogin("a@x", "pw", "HOD");
+    expect(calls[0].url).toBe("/api/session/login");
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ email: "a@x", password: "pw", role: "HOD" });
+  });
+
+  it("a role mismatch surfaces the server's own code and message", async () => {
+    const message = "The selected role does not match your account. Please choose your assigned role.";
+    routeFetch(() => json(401, { error: { code: "role_mismatch", message, details: [] } }));
+    const { sessionLogin } = await client();
+    await expect(sessionLogin("a@x", "pw", "ADMIN")).rejects.toMatchObject({ status: 401, code: "role_mismatch", message });
   });
 });

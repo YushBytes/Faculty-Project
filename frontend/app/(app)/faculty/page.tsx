@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useScope, useUrlState, useWorkspace } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
-import { Badge, BarCell, Card, DataTable, Delta, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
+import { Badge, BarCell, Card, DataTable, Delta, Empty, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
 import { RankBars, Sparkline } from "@/components/charts";
 import { num, pctOf } from "@/lib/format";
 
@@ -35,7 +35,9 @@ export default function Faculty() {
       </div>
       <div className="grid g-main-r">
         <Card title="Average course score" subtitle="Click a name to open their classes"><div style={{ maxHeight: 720, overflowY: "auto" }}><RankBars rows={rows} href={(r) => `/faculty/${r.id}${q}${courseQ}`} /></div></Card>
-        <DataTable rows={rows} rowKey={(r) => r.id} onRowClick={(r) => router.push(`/faculty/${r.id}${q}${courseQ}`)} initialSort={{ key: "avg", dir: "desc" }} maxHeight={740} columns={[
+        <DataTable rows={rows} rowKey={(r) => r.id} onRowClick={(r) => router.push(`/faculty/${r.id}${q}${courseQ}`)} initialSort={{ key: "avg", dir: "desc" }} maxHeight={740}
+          empty={search && data.comparisons.faculty.length ? <Empty title={`Nobody matches “${search}”`}>Clear the search to see everyone.</Empty> : <Empty title="No faculty teaching in this view">Faculty appear once they are assigned to classes in the selected period. Try another academic year, semester or course.</Empty>}
+          columns={[
           { key: "label", label: "Faculty", sort: (r) => r.label, render: (r) => <span className="strong">{r.label}<span className="sub">{r.course_codes?.join(", ")}</span></span> },
           { key: "sections", label: "Sections", align: "right", sort: (r) => r.sections, render: (r) => r.sections },
           { key: "students", label: "Students", align: "right", sort: (r) => r.scored, render: (r) => num(r.scored) },

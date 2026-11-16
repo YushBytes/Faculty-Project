@@ -3,7 +3,7 @@ import { signIn, state, watch } from "./helpers";
 
 test("faculty B cannot open faculty A's class or student, and sees only their own class", async ({ page }) => {
   const s = state();
-  await signIn(page, s.facultyB.email, s.facultyB.password);
+  await signIn(page, s.facultyB);
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 
   await page.goto(`/classes/${s.classA}`);
@@ -24,7 +24,7 @@ test("faculty B cannot open faculty A's class or student, and sees only their ow
 test("class reports download from the browser in all three formats", async ({ page }) => {
   const s = state();
   const w = watch(page);
-  await signIn(page, s.facultyA.email, s.facultyA.password, `/classes/${s.classA}`);
+  await signIn(page, s.facultyA, `/classes/${s.classA}`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Browser Test Course", { timeout: 20_000 });
   await page.getByRole("tab", { name: "Reports" }).click();
   const card = page.locator(".card").filter({ hasText: "Class summary" }).first();
@@ -47,7 +47,7 @@ test("class reports download from the browser in all three formats", async ({ pa
 
 test("an intervention is recorded from the attention list and appears in the class", async ({ page }) => {
   const s = state();
-  await signIn(page, s.facultyA.email, s.facultyA.password, `/classes/${s.classA}`);
+  await signIn(page, s.facultyA, `/classes/${s.classA}`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Browser Test Course", { timeout: 20_000 });
   await page.getByRole("tab", { name: /^Attention/ }).click();
   const flagged = page.getByRole("row").filter({ hasText: "DEEPA NAIR" }).first();

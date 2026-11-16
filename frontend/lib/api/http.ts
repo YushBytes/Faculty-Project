@@ -154,11 +154,13 @@ export async function download(path: string, query?: Query): Promise<{ fileName:
   return { fileName, size: blob.size };
 }
 
-export async function sessionLogin(email: string, password: string): Promise<string> {
+/** Sign in. `role` is the role chosen on the sign-in page: a confirmation the server checks
+ *  against the account's stored role. It never grants anything. */
+export async function sessionLogin(email: string, password: string, role: string): Promise<string> {
   const response = await fetch("/api/session/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, role }),
     credentials: "same-origin",
   });
   if (!response.ok) throw await toError(response);

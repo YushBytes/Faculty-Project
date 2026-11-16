@@ -17,9 +17,13 @@ export type E2EState = {
   run: string;
   departmentId: string;
   otherDepartmentId: string;
-  admin: { email: string; password: string };
-  facultyA: { email: string; password: string; id: string };
-  facultyB: { email: string; password: string; id: string };
+  admin: Person;
+  facultyA: Person;
+  facultyB: Person;
+  /** A faculty member with no classes (empty states). */
+  facultyC: Person;
+  /** The HOD of the run's department. */
+  hod: Person;
   classA: string;
   classB: string;
   assessmentA: string;
@@ -27,6 +31,9 @@ export type E2EState = {
   studentsA: { id: string; register_number: string; full_name: string }[];
   studentsB: { id: string; register_number: string; full_name: string }[];
 };
+
+/** A sign-in identity; `role` is what the sign-in page's role selector must be set to. */
+export type Person = { email: string; password: string; id: string; role: "ADMIN" | "HOD" | "ACADEMIC_HEAD" | "COURSE_COORDINATOR" | "FACULTY" };
 
 export const STATE_FILE = path.join(__dirname, ".state.json");
 
@@ -39,7 +46,7 @@ function need(name: string): string {
 export default async function globalSetup() {
   const web = need("E2E_WEB");
   const api = need("E2E_API");
-  const admin = { email: need("E2E_ADMIN_EMAIL"), password: need("E2E_ADMIN_PASSWORD") };
+  const admin: Person = { email: need("E2E_ADMIN_EMAIL"), password: need("E2E_ADMIN_PASSWORD"), id: "", role: "ADMIN" };
   const run = randomBytes(3).toString("hex").toUpperCase();
   const digits = String(parseInt(run, 16) % 100000).padStart(5, "0");
 
@@ -70,12 +77,12 @@ export default async function globalSetup() {
   const sections = [];
   for (const name of ["S1", "S2"]) sections.push(await call<{ id: string }>("POST", "/sections", token, { department_id: dept.id, name: `${name}${run}`, batch_year: 2024 }));
 
-  const people: Record<string, { email: string; password: string; id: string }> = {};
-  for (const key of ["a", "b"]) {
+  const people: Record<string, Person> = {};
+  for (const [key, role] of [["a", "FACULTY"], ["b", "FACULTY"], ["c", "FACULTY"], ["hod", "HOD"]] as const) {
     const password = `E2e-${randomBytes(9).toString("base64url")}`;
-    const email = `faculty.${key}.${run.toLowerCase()}@e2e.acadlytics.dev`;
-    const user = await call<{ id: string }>("POST", "/users", token, { email, full_name: `E2E Faculty ${key.toUpperCase()} ${run}`, password, role: "FACULTY", department_id: dept.id });
-    people[key] = { email, password, id: user.id };
+    const email = `${role === "HOD" ? "hod" : `faculty.${key}`}.${run.toLowerCase()}@e2e.acadlytics.dev`;
+    const user = await call<{ id: string }>("POST", "/users", token, { email, full_name: `E2E ${role === "HOD" ? "HOD" : `Faculty ${key.toUpperCase()}`} ${run}`, password, role, department_id: dept.id });
+    people[key] = { email, password, id: user.id, role };
   }
   const classA = await call<{ id: string }>("POST", "/offerings", token, { course_id: course.id, term_id: term.id, section_id: sections[0].id, faculty_ids: [people.a.id] });
   const classB = await call<{ id: string }>("POST", "/offerings", token, { course_id: course.id, term_id: term.id, section_id: sections[1].id, faculty_ids: [people.b.id] });
@@ -102,7 +109,7 @@ export default async function globalSetup() {
 
   const state: E2EState = {
     web, api, run, admin, departmentId: dept.id, otherDepartmentId: other.id,
-    facultyA: people.a, facultyB: people.b,
+    facultyA: people.a, facultyB: people.b, facultyC: people.c, hod: people.hod,
     classA: classA.id, classB: classB.id, assessmentA: assessmentA.id, assessmentB: assessmentB.id,
     studentsA, studentsB,
   };

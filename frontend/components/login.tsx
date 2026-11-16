@@ -4,11 +4,20 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Eye, EyeOff, GraduationCap, LockKeyhole } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, GraduationCap, LockKeyhole } from "lucide-react";
 import { useSession } from "@/lib/auth/session";
 import { ApiError } from "@/lib/api/http";
-import type { Workspace } from "@/lib/api/types";
+import type { Role, Workspace } from "@/lib/api/types";
 import { ROLE_LABEL, initials } from "@/lib/format";
+
+/** The five roles, in the requested order, with the labels people use day to day. */
+const ROLE_CHOICES: { role: Role; label: string }[] = [
+  { role: "FACULTY", label: "Faculty" },
+  { role: "COURSE_COORDINATOR", label: "Course Coordinator" },
+  { role: "ACADEMIC_HEAD", label: "Academic Head" },
+  { role: "HOD", label: "HOD" },
+  { role: "ADMIN", label: "Administrator" },
+];
 
 const STEPS = ["Verifying your account", "Resolving your academic scope", "Loading the current semester", "Preparing your workspace"];
 
@@ -25,6 +34,7 @@ export function LoginView() {
   const next = params.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role | "">("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -46,11 +56,14 @@ export function LoginView() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    if (!role) return setError("Choose your role to sign in.");
     setBusy(true);
     try {
-      setBoot(await login(email.trim(), password));
+      setBoot(await login(email.trim(), password, role));
     } catch (err) {
-      setError(err instanceof ApiError ? (err.status === 401 ? "That email and password do not match an active account." : err.message) : "Sign-in failed. Is the server running?");
+      // The server reports a role mismatch only after the password was verified, so its own
+      // message is shown; every other 401 keeps the generic wording.
+      setError(err instanceof ApiError ? (err.code === "role_mismatch" ? err.message : err.status === 401 ? "That email and password do not match an active account." : err.message) : "Sign-in failed. Is the server running?");
       setBusy(false);
     }
   }
@@ -93,9 +106,22 @@ export function LoginView() {
               <div className="pw-wrap"><input className="input" type={show ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
             </label>
+            <fieldset className="role-choice">
+              <legend>Your role</legend>
+              <div className="role-options">
+                {ROLE_CHOICES.map((c) => (
+                  <label key={c.role} className={`role-option ${role === c.role ? "checked" : ""}`}>
+                    <input type="radio" name="role" value={c.role} checked={role === c.role} onChange={() => { setRole(c.role); setError(""); }} />
+                    <span className="role-box" aria-hidden="true"><Check size={13} strokeWidth={3} /></span>
+                    <span>{c.label}</span>
+                  </label>
+                ))}
+              </div>
+              <small className="muted">Confirms how you sign in. What you can see is always decided by your account.</small>
+            </fieldset>
             {params.get("changed") && !error && <div className="notice" role="status">Your password was changed. Sign in with the new one.</div>}
             {error && <div className="notice notice-error" role="alert">{error}</div>}
-            <button className="btn btn-primary" style={{ height: 48 }} disabled={busy || status === "loading"}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</button>
+            <button className="btn btn-primary" style={{ height: 48 }} disabled={busy || status === "loading" || !role}>{busy ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</button>
           </form>
           <p className="muted" style={{ marginTop: 22, fontSize: 13.5 }}>No account yet, or forgotten your password? Ask your HOD or the ACADLYTICS Administrator. Faculty accounts are <b>staff id</b>@srmist.edu.in.</p>
         </div>

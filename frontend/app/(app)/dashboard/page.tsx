@@ -5,6 +5,7 @@ import { FileBarChart, Upload } from "lucide-react";
 import { useScope, useWorkspace } from "@/lib/auth/session";
 import { OverviewDashboard, periodQuery, type Variant } from "@/components/overview";
 import { PageHead } from "@/components/ui";
+import { QuickActions } from "@/components/quick-actions";
 import { semesterLabel } from "@/lib/format";
 
 const VARIANT: Record<string, Variant> = {
@@ -38,6 +39,7 @@ export default function Dashboard() {
           <Link className="btn btn-primary" href="/import"><Upload size={17} /> Import TLP marks</Link>
         </>}
       />
+      <QuickActions workspace={ws} query={periodQuery(scope)} />
       <OverviewDashboard filters={scope} variant={VARIANT[role]} />
     </>
   );

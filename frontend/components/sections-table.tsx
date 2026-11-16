@@ -8,13 +8,13 @@ import { insightsApi } from "@/lib/api/endpoints";
 import type { OfferingRow } from "@/lib/api/types";
 import { useApi } from "@/lib/hooks/use-api";
 import { periodQuery } from "@/components/overview";
-import { Badge, BarCell, DataTable, ErrorState, LoadingBlock } from "@/components/ui";
+import { Badge, BarCell, DataTable, Empty, ErrorState, LoadingBlock } from "@/components/ui";
 import { Sparkline } from "@/components/charts";
 import { FacultyDrawer } from "@/components/assign";
 import { pctOf } from "@/lib/format";
 
 /** Every class (course × section) in scope with its measures; faculty assignment in place. */
-export function Sections({ scope, canAssign, onChanged }: { scope: ReturnType<typeof useScope>; canAssign: boolean; onChanged?: () => void }) {
+export function Sections({ scope, canAssign, onChanged, empty }: { scope: ReturnType<typeof useScope>; canAssign: boolean; onChanged?: () => void; empty?: React.ReactNode }) {
   const router = useRouter();
   const { data, error, loading, reload } = useApi(() => insightsApi.offerings(scope), [scope]);
   const [assign, setAssign] = useState<OfferingRow | null>(null);
@@ -28,6 +28,7 @@ export function Sections({ scope, canAssign, onChanged }: { scope: ReturnType<ty
         rowKey={(r) => r.id}
         onRowClick={(r) => router.push(`/classes/${r.id}${q}`)}
         initialSort={{ key: "section", dir: "asc" }}
+        empty={empty ?? <Empty title="No classes in this view">Classes appear here for the selected period once they exist in your scope. Try another academic year or semester at the top of the page.</Empty>}
         columns={[
           { key: "section", label: "Class", sort: (r) => `${r.course_code} ${r.section_name}`, render: (r) => <span className="strong">{r.course_code} · {r.section_name}<span className="sub">{r.term_name}</span></span> },
           { key: "faculty", label: "Faculty", sort: (r) => r.faculty[0]?.name ?? "", render: (r) => <span>{r.faculty.map((f) => f.name).join(", ") || <span className="muted">Unassigned</span>}</span> },

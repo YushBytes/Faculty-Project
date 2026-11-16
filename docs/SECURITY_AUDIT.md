@@ -25,6 +25,7 @@ database).
 | Logout | Revokes the session family; accepts the refresh token in the body even when the access token has expired (intended) | live 204, then refresh → 401 |
 | Password change | Verifies the current password, revokes every session of the account, audited | `test_auth_api.py`; `e2e_live.py` |
 | Administrator reset | `PATCH /users/{id}` with `password` revokes the user's sessions, audited | `users/service.py` |
+| **Sign-in role confirmation (2026-11-16)** | Website requires a role; API accepts it optionally. Checked against the stored role only after the password; mismatch = 401 `role_mismatch`, no tokens, counted by the throttle. Never used for permissions (tokens from the stored user; every request re-reads the user) | `test_login_role.py` (all roles × all wrong roles), `e2e/login-role.spec.ts` |
 | **Brute force (new)** | 10 wrong passwords for one email in 15 minutes → 429 with `Retry-After` until the window passes, correct password included; unknown emails throttled identically | `core/throttle.py`; `tests/test_login_throttle.py` (9 tests). Before: 50 wrong then the right one → 200 (live) |
 | CSRF | The API authenticates with a Bearer header, which a cross-site form cannot set. The only cookie is SameSite=Strict and scoped to `/api/session` (login/refresh/logout) | design |
 | CORS | No CORS middleware: the API is not meant to be called cross-origin; the browser reaches it only through the same-origin Next.js proxy | `main.py` |
@@ -52,6 +53,13 @@ student sees *Not found or not in your scope*; their lists show only their own s
 
 Existing suite: `tests/security/test_authorization_idor.py` and `test_security.py` cover the five
 roles across departments and courses.
+
+**Exactly one Administrator (SEC-07, 2026-11-16):** the service refuses a second active
+Administrator, and the partial unique index `uq_users_single_active_admin` (migration `0009`)
+makes two concurrent writes unable to both succeed. Proven with real concurrent transactions:
+without the index two simultaneous creations produced two active Administrators; with it,
+exactly one (`test_single_administrator.py`). There is no handover operation (documented
+limitation). `NAVIGATION_AND_ROLES.md` §5.
 
 **Department thresholds (SEC-05, implemented 2026-11-16):** `GET /departments/{id}/settings`
 follows one rule, `organization/scope.py::threshold_department_ids` — ADMIN every department;
@@ -102,9 +110,9 @@ Summary of what was inspected:
 | Current tree | already clean (second-round commit), so after the rewrite the tip of `backend` has the **same tree** as before — only history changes |
 | GitHub | public; 0 forks; no pull requests (so no undeletable `refs/pull/*`); no branch protection; owner plus 3 collaborators with write access |
 
-**Required first (SEC-06):** `main` — the default branch — is 10 commits behind and still ships
-the built-in passwords in runtime code. It must receive `backend` (tested: no conflicts, identical
-tree) before the rewrite, or the rewrite would leave `"***REMOVED***"` as a new known default.
+**Done (SEC-06, 2026-11-16):** `main` received `backend` by a normal merge (`f8f91f3`, identical
+tree, CI green), so the default branch no longer ships the built-in passwords and a rewrite cannot
+leave `"***REMOVED***"` as a new default.
 
 Impact on collaborators: every clone made before the rewrite still contains the values and has
 history that no longer matches GitHub. Each collaborator must push or save their work first, then

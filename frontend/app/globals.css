@@ -404,6 +404,52 @@ button { cursor: pointer; }
 .l-steps span { color: #6ee7c8; font-weight: 700; font-size: 13.5px; letter-spacing: .08em; }
 .l-footer { padding: 30px max(28px, calc((100vw - 1240px) / 2)); display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); }
 
+/* ------------------------------------------------------------------ sign-in role choice */
+/* Checkbox-looking options with radio semantics: one role at a time, arrow keys move between them. */
+.role-choice { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.role-choice legend { font-size: 13.5px; font-weight: 600; color: var(--text-2); padding: 0; margin-bottom: 6px; }
+.role-choice small { font-size: 12.5px; }
+.role-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.role-option { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; transition: border-color .15s, background .15s; }
+.role-option:hover { border-color: var(--accent); }
+/* The real radio covers the whole option, invisibly: a click anywhere lands on it, and keyboard
+   and assistive technology use it directly. */
+.role-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.role-box { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; color: transparent; background: var(--surface); flex: none; }
+.role-option.checked { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.role-option.checked .role-box { background: var(--accent); border-color: var(--accent); color: #fff; }
+.role-option:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* ------------------------------------------------------------------ dashboard quick actions */
+.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.quick-action { display: flex; align-items: center; gap: 11px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); color: var(--text); transition: border-color .15s, box-shadow .15s; min-width: 0; }
+.quick-action:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.quick-action:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+.qa-icon { width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.qa-text { display: grid; min-width: 0; }
+.qa-text b { font-size: 14px; color: var(--ink); }
+.qa-text small { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ------------------------------------------------------------------ how it works */
+.how-it-works { margin: -6px 0 16px; font-size: 14px; color: var(--text-2); }
+.how-it-works summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13.5px; list-style: none; }
+.how-it-works summary::-webkit-details-marker { display: none; }
+.how-it-works summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); border-radius: 6px; }
+.how-body { margin-top: 10px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; gap: 8px; max-width: 880px; }
+
+/* ------------------------------------------------------------------ welcome tour */
+/* A small card in the corner: no overlay, the page stays usable behind it. */
+.tour { position: fixed; right: 20px; bottom: 20px; z-index: 60; width: min(360px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 16px 18px; display: grid; gap: 8px; }
+.tour-head { display: flex; align-items: center; gap: 8px; }
+.tour-head small { flex: 1; font-size: 12.5px; }
+.tour-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
+.tour h2 { font-family: var(--font-display); font-size: 16.5px; color: var(--ink); margin: 0; }
+.tour p { font-size: 14px; color: var(--text-2); margin: 0; }
+.tour-dots { display: flex; gap: 5px; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
+.tour-dots i.on { background: var(--accent); width: 16px; border-radius: 3px; }
+.tour-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+
 /* ------------------------------------------------------------------ responsive */
 @media (max-width: 1280px) {
   .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -432,6 +478,8 @@ button { cursor: pointer; }
   /* Content cards side by side do not fit a phone; KPI tiles (.kpis, .g-4) stay two-up. */
   .g-2 { grid-template-columns: 1fr; }
   .list-item { flex-wrap: wrap; overflow-wrap: anywhere; }
+  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tour { right: 12px; left: 12px; bottom: 12px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }

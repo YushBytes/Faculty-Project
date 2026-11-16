@@ -18,14 +18,16 @@ a scope decision (by design), a gap that could be closed, or something unmeasure
 
 | Gap | Today | Severity |
 |---|---|---|
-| Password reset by email / invitation link | An Administrator or HOD sets the password in *People*; no forced change at first sign-in | MEDIUM |
+| Password reset by email / invitation link | Not implemented (needs mail infrastructure and a secure token flow). An Administrator or HOD sets the password in *People* | MEDIUM |
+| Forced password change at first sign-in | Not implemented (needs a per-account flag, i.e. a schema change, plus a guarded flow). People are asked to change it in *Settings* | MEDIUM |
+| **Administrator handover** | **Not implemented.** The Administrator cannot demote themselves, a second active Administrator cannot exist (service + database index), and the last one cannot be deactivated — so replacing the Administrator needs direct database access by an operator. A secure transfer workflow has to be designed separately | MEDIUM |
+| Tour completion is per device | Remembered in the browser's localStorage; a new browser shows the tour once again (by design: no backend state) | LOW |
 | Per-assessment generic upload in the web app | The API has `POST /assessments/{id}/import`; the web import page uses the TLP/offering pipeline (which accepts plain sheets and the offering template, and now supports column mapping) | LOW |
 | Editing a single mark in the web app | Marks change by re-importing (audited) or `PUT /assessments/{id}/results` via the API; there is no inline cell editor | LOW |
 | Student create/edit screens | Students are created from TLP reports or `POST /students[/bulk|/import]`; the web app lists and profiles them but has no edit form | LOW |
 | Editing department thresholds in the web app | Read-only card on *Settings* (scoped per role); changes go through `PUT /departments/{id}/settings/{key}` (ADMIN or the department's HOD) | LOW |
 | Throttle state is per process | Fine with the single uvicorn process the image runs; use a proxy limit if scaled out | LOW |
 | Fictional-data generators live in the application package | `app/seed.py`, `app/demo/` — explicit CLI only, refused in production and on non-empty databases; tests depend on them | LOW |
-| `main` (default branch) is 10 commits behind and still ships built-in passwords | Merge of `backend` tested clean; push awaits your approval (SEC-06) | HIGH until merged |
 | Former built-in passwords remain in Git history | No account accepts them; current files are clean; the rewrite is prepared and waits for your approval (`GIT_HISTORY_REWRITE.md`) | HIGH until pushed |
 
 ## Unmeasured

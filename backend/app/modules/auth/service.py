@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.errors import AuthenticationError, BusinessRuleError, TooManyAttemptsError
+from app.core.errors import (
+    AuthenticationError,
+    BusinessRuleError,
+    RoleMismatchError,
+    TooManyAttemptsError,
+)
 from app.core.security import (
     InvalidTokenError,
     create_access_token,
@@ -20,12 +25,13 @@ from app.modules.audit.service import AuditService
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.repository import RefreshTokenRepository
 from app.modules.auth.schemas import TokenPair
-from app.modules.users.models import User
+from app.modules.users.models import Role, User
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import normalise_email
 
 INVALID_CREDENTIALS = "Invalid email or password."
 INVALID_REFRESH = "Invalid or expired refresh token."
+ROLE_MISMATCH = "The selected role does not match your account. Please choose your assigned role."
 
 
 class AuthService:
@@ -34,7 +40,11 @@ class AuthService:
         self._users = UserRepository(session)
         self._tokens = RefreshTokenRepository(session)
 
-    def login(self, email: str, password: str) -> TokenPair:
+    def login(self, email: str, password: str, role: Role | None = None) -> TokenPair:
+        """Sign in. ``role`` is an optional confirmation from the sign-in page: when given, it
+        must equal the stored role, checked only after the password, and a mismatch issues no
+        tokens. It is never used for anything else; the tokens and every permission come from
+        the stored user."""
         key = normalise_email(email)
         wait = login_throttle.retry_after(key)
         if wait is not None:
@@ -51,6 +61,10 @@ class AuthService:
         if user is None or not password_ok or not user.is_active:
             login_throttle.failed(key)
             raise AuthenticationError(INVALID_CREDENTIALS)
+        if role is not None and role != user.role:
+            # Counted like a wrong password, so it cannot be used to probe without limit.
+            login_throttle.failed(key)
+            raise RoleMismatchError(ROLE_MISMATCH)
         login_throttle.succeeded(key)
 
         now = datetime.now(UTC)

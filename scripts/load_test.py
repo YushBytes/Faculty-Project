@@ -3,8 +3,9 @@
     python scripts/load_test.py --web https://staging.example.edu --users 40 --minutes 5 \
         --accounts accounts.csv
 
-`accounts.csv` (keep it out of the repository) has one `email,password` per line: real staging
-faculty/HOD accounts, one per simulated user, reused round-robin. Each simulated user signs in
+`accounts.csv` (keep it out of the repository) has one `email,password,role` per line (role as
+the API spells it: FACULTY, COURSE_COORDINATOR, ACADEMIC_HEAD, HOD or ADMIN — the website sign-in
+requires it): real staging accounts, one per simulated user, reused round-robin. Each simulated user signs in
 once through the web app's session route (a successful sign-in never trips the throttle), then
 loops over what a teacher does on a normal day:
 
@@ -47,13 +48,13 @@ def record(name: str, ms: float, ok: bool) -> None:
 
 
 class User:
-    def __init__(self, web: str, email: str, password: str) -> None:
+    def __init__(self, web: str, email: str, password: str, role: str) -> None:
         self.web = web.rstrip("/")
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
         )
         self.token = ""
-        self.email, self.password = email, password
+        self.email, self.password, self.role = email, password, role
 
     def call(self, name: str, path: str, body: dict | None = None) -> bytes | None:
         headers = {"content-type": "application/json"}
@@ -73,7 +74,9 @@ class User:
 
     def sign_in(self) -> bool:
         payload = self.call(
-            "sign-in", "/api/session/login", {"email": self.email, "password": self.password}
+            "sign-in",
+            "/api/session/login",
+            {"email": self.email, "password": self.password, "role": self.role},
         )
         if payload is None:
             return False
@@ -81,8 +84,8 @@ class User:
         return True
 
 
-def session(web: str, email: str, password: str, deadline: float, think: float) -> None:
-    user = User(web, email, password)
+def session(web: str, email: str, password: str, role: str, deadline: float, think: float) -> None:
+    user = User(web, email, password, role)
     if not user.sign_in():
         return
     workspace = user.call("workspace", "/api/v1/me/workspace")
@@ -117,7 +120,7 @@ def percentile(values: list[float], q: float) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--web", required=True)
-    ap.add_argument("--accounts", required=True, help="CSV of email,password (not in the repo)")
+    ap.add_argument("--accounts", required=True, help="CSV of email,password,role (not in the repo)")
     ap.add_argument("--users", type=int, default=20)
     ap.add_argument("--minutes", type=float, default=5)
     ap.add_argument("--think", type=float, default=2.0, help="seconds between page views")
@@ -126,17 +129,17 @@ def main() -> int:
     args = ap.parse_args()
 
     with open(args.accounts, newline="", encoding="utf-8") as handle:
-        accounts = [(row[0].strip(), row[1]) for row in csv.reader(handle) if len(row) >= 2]
+        accounts = [(row[0].strip(), row[1], row[2].strip()) for row in csv.reader(handle) if len(row) >= 3]
     if not accounts:
-        print("No accounts in the CSV.", file=sys.stderr)
+        print("No accounts in the CSV (expected email,password,role per line).", file=sys.stderr)
         return 2
     deadline = time.time() + args.minutes * 60
     print(f"{args.users} users for {args.minutes} min against {args.web} ...")
     with ThreadPoolExecutor(max_workers=args.users) as pool:
         futures = []
         for n in range(args.users):
-            email, password = accounts[n % len(accounts)]
-            futures.append(pool.submit(session, args.web, email, password, deadline, args.think))
+            email, password, role = accounts[n % len(accounts)]
+            futures.append(pool.submit(session, args.web, email, password, role, deadline, args.think))
             time.sleep(0.2)  # ramp up
     # A simulated user that crashed must fail the run, not vanish from the numbers.
     crashed = [f.exception() for f in futures if f.exception() is not None]

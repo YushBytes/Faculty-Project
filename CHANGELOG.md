@@ -7,6 +7,22 @@ Dates are the dates of the work.
 
 ## Unreleased
 
+### Product enhancement — 2026-11-16 (third round)
+
+- Exactly one active Administrator, now also enforced by the database (migration `0009`, partial
+  unique index); concurrent creation, promotion and bootstrap cannot produce two. The conflict
+  message no longer promises a transfer that does not exist; the People page never offers
+  Administrator for anyone else.
+- Sign-in asks for the person's role (five checkbox-style options, one choice). The website
+  requires it; the API accepts it optionally. Checked against the stored role after the password;
+  a mismatch is refused with no tokens. The choice never grants anything.
+- Sidebar regrouped (Home, Academic Management, Performance Intelligence, Student Support, Data &
+  Imports, Reports, Administration; Settings in the footer) — same routes, same visibility.
+- Role-specific quick actions above the unchanged dashboards; specific empty states on eight list
+  pages; "How it works" on Attention and Analytics; a skippable, replayable welcome tour.
+- `docs/NAVIGATION_AND_ROLES.md`; limitations (no Administrator handover, no email reset or
+  invitation, no forced first-login change) documented.
+
 ### Engineering decisions — 2026-11-16 (second round)
 
 - Department analytics thresholds are scoped: the Administrator sees every department, everyone

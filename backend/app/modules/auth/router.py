@@ -22,9 +22,19 @@ def get_auth_service(db: Annotated[Session, Depends(get_db)]) -> AuthService:
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
-@router.post("/login", response_model=TokenPair, responses=_401, summary="Log in")
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    responses=_401,
+    summary="Log in",
+    description=(
+        "`role` is optional. When present it must match the account's stored role, checked "
+        "after the password: a mismatch is 401 `role_mismatch` and no tokens are issued. "
+        "Permissions always come from the stored role, never from this field."
+    ),
+)
 def login(body: LoginRequest, service: AuthServiceDep) -> TokenPair:
-    return service.login(body.email, body.password)
+    return service.login(body.email, body.password, body.role)
 
 
 @router.post(

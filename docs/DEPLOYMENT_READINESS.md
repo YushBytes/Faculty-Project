@@ -75,7 +75,7 @@ not route to the API directly.
 | Area | State |
 |---|---|
 | Health | `GET /health` (API): database reachability and migration revision; Compose health check on it; web waits for a healthy API |
-| Migrations | `alembic upgrade head` on every API start (idempotent); one head, `0008`; empty-database upgrade verified |
+| Migrations | `alembic upgrade head` on every API start (idempotent); one head, `0009`; empty-database upgrade verified |
 | First account | Created once from `ACADLYTICS_ADMIN_*`; no built-in passwords anywhere |
 | Containers | API runs as uid 1000 (`appuser`), web as `node`; slim/alpine bases; no secrets baked into images |
 | Reproducible builds | `backend/constraints.txt` pins the tested Python versions; `package-lock.json` + `npm ci` for the web |

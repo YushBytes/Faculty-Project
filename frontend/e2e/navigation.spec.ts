@@ -4,9 +4,11 @@ import { signIn, state, watch } from "./helpers";
 test("every sidebar destination opens cleanly for the Administrator", async ({ page }) => {
   test.setTimeout(180_000);
   const s = state();
-  await signIn(page, s.admin.email, s.admin.password);
+  await signIn(page, s.admin);
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
-  const hrefs = await page.getByRole("navigation").getByRole("link").evaluateAll((links) => links.map((a) => a.getAttribute("href")!));
+  // Sidebar groups plus the footer (Settings moved there in the regrouping).
+  const hrefs = await page.getByRole("complementary", { name: "Workspace navigation" }).locator("a.nav-link").evaluateAll((links) => links.map((a) => a.getAttribute("href")!));
+  expect(hrefs).toContain("/settings");
   expect(hrefs.length).toBeGreaterThan(15);
   for (const href of hrefs) {
     const w = watch(page);
@@ -30,7 +32,7 @@ test("an unknown address shows the product's not-found page with a way back", as
 
 test("the class page reflects the marks entered, keeping absent, missing and zero apart", async ({ page }) => {
   const s = state();
-  await signIn(page, s.facultyA.email, s.facultyA.password, `/classes/${s.classA}`);
+  await signIn(page, s.facultyA, `/classes/${s.classA}`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Browser Test Course", { timeout: 20_000 });
   await page.getByRole("tab", { name: "Marks" }).click();
   const row = (name: string) => page.getByRole("row").filter({ hasText: name });

@@ -114,8 +114,9 @@ class Client:
     def patch(self, path: str, body: object, **kw) -> Response:
         return self.call("PATCH", path, body=body, **kw)
 
-    def login(self, email: str, password: str) -> Response:
-        r = self.post("/api/session/login", {"email": email, "password": password}, token=None)
+    def login(self, email: str, password: str, role: str = "FACULTY") -> Response:
+        # The website always sends the role chosen on the sign-in page (checked by the server).
+        r = self.post("/api/session/login", {"email": email, "password": password, "role": role}, token=None)
         if r.status == 200:
             self.token = r.json()["access_token"]
         return r
@@ -171,10 +172,16 @@ def main() -> int:  # noqa: C901 - a linear script reads best as one sequence of
 
     section("Authentication")
     admin = Client(args.web)
-    check("wrong password is 401", admin.login(args.admin_email, "wrong-password-123").status == 401)
+    check("wrong password is 401", admin.login(args.admin_email, "wrong-password-123", "ADMIN").status == 401)
+    missing = admin.post("/api/session/login", {"email": args.admin_email, "password": args.admin_password}, token=None)
+    check("website sign-in without a role is 422", missing.status == 422, missing.status)
+    wrong_role = admin.login(args.admin_email, args.admin_password, "FACULTY")
+    check("correct password, wrong role: 401 role_mismatch, no session",
+          wrong_role.status == 401 and wrong_role.json()["error"]["code"] == "role_mismatch"
+          and b"access_token" not in wrong_role.body, wrong_role.status)
     check("a common default password is refused",
-          admin.login(args.admin_email, "Admin@123").status == 401)
-    r = admin.login(args.admin_email, args.admin_password)
+          admin.login(args.admin_email, "Admin@123", "ADMIN").status == 401)
+    r = admin.login(args.admin_email, args.admin_password, "ADMIN")
     check("admin signs in through /api/session/login", r.status == 200, r.status)
     check("refresh token is not in the response body", b"refresh_token" not in r.body)
     cookie = next((c for c in admin.jar if c.name == "acadlytics_rt"), None)
@@ -202,7 +209,7 @@ def main() -> int:  # noqa: C901 - a linear script reads best as one sequence of
                                           "department_id": dept_id})
     check("HOD created", hod_user.status == 201, hod_user.body[:200])
     hod = Client(args.web)
-    check("HOD signs in", hod.login("hod.e2e@srmist.edu.in", hod_pw).status == 200)
+    check("HOD signs in", hod.login("hod.e2e@srmist.edu.in", hod_pw, "HOD").status == 200)
 
     section("TLP import: XLSX + PDF, two sections, set-up from the reports (HOD)")
     files = [("DSA_FJ-II_A1.xlsx", (SAMPLES / "DSA_FJ-II_A1.xlsx").read_bytes()),
