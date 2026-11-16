@@ -36,10 +36,21 @@ are CSS custom properties in `app/globals.css`. Motion is subtle and disabled un
 
 UI visibility is never authorisation: the server enforces scope on every request.
 
+## Navigation, workspaces and the tour
+
+The sidebar is defined in `lib/nav.ts` (groups: Home, Academic Management, Performance
+Intelligence, Student Support, Data & Imports, Reports, Administration; Settings in the footer),
+from the role and the capabilities in `/me/workspace`. `components/quick-actions.tsx` adds
+role-specific shortcuts above the unchanged dashboard; `components/tour.tsx` is the skippable,
+replayable welcome tour (localStorage, no backend state); `components/how-it-works.tsx` is the
+collapsed help note on Attention and Analytics. Mapping and rules: `docs/NAVIGATION_AND_ROLES.md`.
+
 ## Sign-in and accounts
 
-The sign-in page has an email and a password field and nothing else: no account list, no role
-picker, no prefilled credentials. Accounts come from the Administrator (*People*) and from
+The sign-in page has email, password and a required role choice (five checkbox-style options,
+one selectable), and nothing else: no account list, no prefilled credentials. The role is sent to
+`/api/session/login`, which requires it; the backend compares it with the stored role after the
+password and issues no tokens on a mismatch. It never grants anything. Accounts come from the Administrator (*People*) and from
 uploaded TLP reports; see the repository README, "First sign-in".
 
 *Settings → Change password* calls `POST /api/v1/auth/password`. The server revokes every

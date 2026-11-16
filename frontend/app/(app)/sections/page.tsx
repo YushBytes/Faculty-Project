@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useScope } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
-import { Badge, BarCell, Card, DataTable, Delta, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
+import { Badge, BarCell, Card, DataTable, Delta, Empty, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
 import { ScaleLegend, Sparkline } from "@/components/charts";
 import { num, pct, pctOf, scaleColor } from "@/lib/format";
 
@@ -42,7 +42,9 @@ export default function Sections() {
       </Card>
       <div className="section">
         <div className="filters"><div className="search"><Search size={16} /><input className="input" placeholder="Find a section (e.g. B4)" value={search} onChange={(e) => setSearch(e.target.value)} /></div></div>
-        <DataTable rows={rows} rowKey={(r) => r.id} onRowClick={(r) => router.push(`/sections/${r.id}${q}`)} initialSort={{ key: "avg", dir: "asc" }} maxHeight={640} columns={[
+        <DataTable rows={rows} rowKey={(r) => r.id} onRowClick={(r) => router.push(`/sections/${r.id}${q}`)} initialSort={{ key: "avg", dir: "asc" }} maxHeight={640}
+          empty={search && all.length ? <Empty title={`No section matches “${search}”`}>Clear the search to see all {all.length} sections.</Empty> : <Empty title="No sections in this view yet">Sections appear once they have classes in the selected period. Try another academic year or semester at the top of the page.</Empty>}
+          columns={[
           { key: "label", label: "Section", sort: (r) => r.label, render: (r) => <span className="strong">{r.label}<span className="sub">Batch {r.batch_year}</span></span> },
           { key: "courses", label: "Courses", align: "right", render: (r) => r.courses },
           { key: "students", label: "Enrolments", align: "right", sort: (r) => r.enrolments, render: (r) => num(r.enrolments) },

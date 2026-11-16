@@ -6,7 +6,7 @@ import { Network } from "lucide-react";
 import { useScope, useWorkspace } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
 import { CoordinatorDrawer } from "@/components/assign";
-import { Badge, BarCell, Card, DataTable, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
+import { Badge, BarCell, Card, DataTable, Empty, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
 import { num, pctOf } from "@/lib/format";
 
 export default function Team() {
@@ -28,7 +28,9 @@ export default function Team() {
         <div className={`kpi ${unassigned.length ? "warn" : ""}`}><div className="k-label">Courses without a coordinator</div><div className="k-value">{unassigned.length}</div></div>
       </div>
       <Card className="section" title="Coordinator portfolio" subtitle="One row per course">
-        <DataTable rows={data.comparisons.courses} rowKey={(r) => r.id} columns={[
+        <DataTable rows={data.comparisons.courses} rowKey={(r) => r.id}
+          empty={<Empty title="No courses in this view yet">Coordinators are assigned per course; courses appear here once they have classes in the selected period.</Empty>}
+          columns={[
           { key: "course", label: "Course", sort: (r) => r.label, render: (r) => <Link className="strong" href={`/courses/${r.id}${q}`}>{r.label}<span className="sub">{r.name}</span></Link> },
           { key: "coord", label: "Coordinator", render: (r) => r.coordinators?.length ? r.coordinators.join(", ") : <Badge tone="amber">Unassigned</Badge> },
           { key: "sections", label: "Sections", align: "right", sort: (r) => r.sections, render: (r) => r.sections },
@@ -41,6 +43,7 @@ export default function Team() {
         ]} />
       </Card>
       <Card className="section" title="Recent activity" subtitle="Imports confirmed in this scope">
+        {data.activity.imports.length === 0 && <Empty title="No imports confirmed in this scope yet" />}
         <div className="list">{data.activity.imports.map((i) => <div className="list-item" key={i.id}><div className="grow"><b>{i.file_name}</b><small>{i.offering} · {i.by}</small></div><Badge tone={i.status === "committed" ? "green" : "amber"}>{i.status}</Badge></div>)}</div>
       </Card>
       {course && <CoordinatorDrawer courseId={course} onClose={() => setCourse(null)} onChanged={reload} />}

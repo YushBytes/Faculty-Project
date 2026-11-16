@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api/http";
 import type { Role, UserRead } from "@/lib/api/types";
 import { useSession, useUrlState, useWorkspace } from "@/lib/auth/session";
 import { useApi } from "@/lib/hooks/use-api";
-import { Badge, DataTable, Drawer, ErrorState, LoadingBlock, Notice, PageHead } from "@/components/ui";
+import { Badge, DataTable, Drawer, Empty, ErrorState, LoadingBlock, Notice, PageHead } from "@/components/ui";
 import { ROLE_LABEL, dateTime, num } from "@/lib/format";
 
 const ALL_ROLES: Role[] = ["ADMIN", "HOD", "ACADEMIC_HEAD", "COURSE_COORDINATOR", "FACULTY"];
@@ -33,7 +33,9 @@ export default function People() {
       </form>
       {error ? <ErrorState error={error} retry={reload} /> : loading || !data ? <LoadingBlock rows={12} /> : (
         <>
-          <DataTable rows={data.items} rowKey={(u) => u.id} onRowClick={(u) => setEdit(u)} columns={[
+          <DataTable rows={data.items} rowKey={(u) => u.id} onRowClick={(u) => setEdit(u)}
+            empty={<Empty title={q || role ? "Nobody matches this search" : "No accounts yet"}>{q || role ? "Clear the search or the role filter to see everyone." : "Use “Add person” to create an account, or upload TLP reports — faculty named in them get an account (set their password here)."}</Empty>}
+            columns={[
             { key: "name", label: "Name", render: (u) => <span className="strong">{u.full_name}<span className="sub">{u.email}</span></span> },
             { key: "role", label: "Role", render: (u) => <Badge tone={u.role === "ADMIN" ? "violet" : u.role === "HOD" || u.role === "ACADEMIC_HEAD" ? "blue" : u.role === "COURSE_COORDINATOR" ? "accent" : undefined}>{ROLE_LABEL[u.role]}</Badge> },
             { key: "code", label: "Staff id", render: (u) => u.employee_code ?? "—" },
@@ -50,6 +52,17 @@ export default function People() {
       {edit && <UserDrawer user={edit === "new" ? null : edit} roles={manageable} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
     </>
   );
+}
+
+/**
+ * Roles offered in the drawer. There is exactly one active Administrator (enforced by the API and
+ * the database), so Administrator is never offered for anyone else, and the Administrator's own
+ * role is shown fixed — there is no handover operation (docs/KNOWN_LIMITATIONS.md).
+ */
+function roleOptions(user: UserRead | null, roles: Role[]): Role[] {
+  if (user?.role === "ADMIN") return ["ADMIN"];
+  const base = user && !roles.includes(user.role) ? [user.role] : roles;
+  return base.filter((r) => r !== "ADMIN");
 }
 
 function UserDrawer({ user, roles, onClose, onSaved }: { user: UserRead | null; roles: Role[]; onClose: () => void; onSaved: () => void }) {
@@ -82,7 +95,7 @@ function UserDrawer({ user, roles, onClose, onSaved }: { user: UserRead | null; 
       <label className="field"><span>Full name</span><input className="input" value={form.full_name} onChange={up("full_name")} /></label>
       {!user && <label className="field"><span>Email</span><input className="input" type="email" value={form.email} onChange={up("email")} /></label>}
       <div className="grid g-2">
-        <label className="field"><span>Role</span><select className="select" value={form.role} onChange={up("role")}>{(user && !roles.includes(user.role) ? [user.role] : roles).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
+        <label className="field"><span>Role</span><select className="select" value={form.role} onChange={up("role")} disabled={user?.role === "ADMIN"} title={user?.role === "ADMIN" ? "There is exactly one Administrator; the role cannot be changed or handed over here." : undefined}>{roleOptions(user, roles).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></label>
         <label className="field"><span>Department</span><select className="select" value={form.department_id} onChange={up("department_id")} disabled={ws.user.role !== "ADMIN"}><option value="">None</option>{departments.data?.items.map((d) => <option key={d.id} value={d.id}>{d.code}</option>)}</select></label>
         <label className="field"><span>Staff id</span><input className="input" value={form.employee_code} onChange={up("employee_code")} placeholder="e.g. 103059" /></label>
         <label className="field"><span>Designation</span><input className="input" value={form.designation} onChange={up("designation")} placeholder="Assistant Professor" /></label>

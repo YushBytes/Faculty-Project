@@ -12,6 +12,7 @@ import { FilterBar } from "@/components/filter-bar";
 import { Card, DataTable, Empty, ErrorState, Kpi, LoadingBlock, PageHead, SeverityBadge } from "@/components/ui";
 import { RuleBars, StackedRuleBars } from "@/components/charts";
 import { InterventionDrawer } from "@/components/intervention-drawer";
+import { HowItWorks } from "@/components/how-it-works";
 import { RULES, date, num } from "@/lib/format";
 
 const PAGE = 50;
@@ -30,6 +31,11 @@ export default function Attention() {
   return (
     <>
       <PageHead eyebrow="Attention" title="Students needing attention" description="Seven deterministic rules on recorded marks. Each flag shows the evidence that fired it — there is no hidden risk score, and a flag is a prompt to look, not a verdict." />
+      <HowItWorks>
+        <p>After every confirmed import or mark change, each student in the class is checked against seven rules: {Object.values(RULES).map((r) => r.name.toLowerCase()).join(", ")}.</p>
+        <p>The thresholds come from the class or its department (Settings shows your department&apos;s), and every flag states the value it found, the threshold it used and the assessments involved. A student <b>needs attention</b> when any High rule fires, or at least two Medium rules do; Low rules alone are informational.</p>
+        <p>Absent, exempt and missing marks are never treated as zero. Next step: open a student, or record an intervention from the list below.</p>
+      </HowItWorks>
       <FilterBar show={["course", "section", "faculty"]} />
       <div className="kpis" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
         <Kpi label="Students meeting the escalation rule" tone="warn" value={num(overview.data?.kpis.attention_students)} />

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useScope, useWorkspace } from "@/lib/auth/session";
 import { periodQuery, useOverview } from "@/components/overview";
-import { Badge, BarCell, Card, DataTable, Delta, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
+import { Badge, BarCell, Card, DataTable, Delta, Empty, ErrorState, LoadingDashboard, PageHead } from "@/components/ui";
 import { GroupedBars, MultiTrend, Sparkline } from "@/components/charts";
 import { num, pctOf } from "@/lib/format";
 
@@ -31,6 +31,7 @@ export default function Courses() {
           rowKey={(r) => r.id}
           onRowClick={(r) => router.push(`/courses/${r.id}${q}`)}
           initialSort={{ key: "label", dir: "asc" }}
+          empty={<Empty title="No courses are available in this view yet">{ws.user.role === "COURSE_COORDINATOR" ? "Courses you coordinate appear here once you are appointed to them and they have classes in the selected period." : "Courses appear once they have classes in the selected period — usually set up by importing TLP reports. Try another academic year or semester at the top of the page."}</Empty>}
           columns={[
             { key: "label", label: "Course", sort: (r) => r.label, render: (r) => <span className="strong">{r.label} <Badge tone="outline">{r.course_type ?? "—"}</Badge><span className="sub">{r.name}</span></span> },
             { key: "coord", label: "Coordinator", render: (r) => r.coordinators?.length ? r.coordinators.join(", ") : <span className="muted">Unassigned</span> },
