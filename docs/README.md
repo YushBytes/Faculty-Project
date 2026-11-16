@@ -18,6 +18,7 @@ the detail behind it.
 |---|---|
 | [`LOCAL_DEMO_GUIDE.md`](LOCAL_DEMO_GUIDE.md) | Start, stop, first sign-in, a teacher's walk-through, the end-to-end check, backup and restore. |
 | [`INTEGRATION_AUDIT.md`](INTEGRATION_AUDIT.md) | Which page calls which API, and how the web app talks to the backend. |
+| [`NAVIGATION_AND_ROLES.md`](NAVIGATION_AND_ROLES.md) | Sidebar groups and every route, role workspaces and quick actions, the welcome tour, the sign-in role check, and the single-Administrator rule. |
 | [`FINAL_ENGINEERING_AUDIT.md`](FINAL_ENGINEERING_AUDIT.md) | **Start here for the current state.** Architecture, every route and endpoint, entities, what was found and fixed, readiness per subsystem. |
 | [`BUG_REGISTER.md`](BUG_REGISTER.md) | Every defect found in the 2026-11-16 audit: reproduction, root cause, fix, regression test, verification. |
 | [`TESTING_AND_VERIFICATION.md`](TESTING_AND_VERIFICATION.md) | Every automated suite and live check, how to run it, and the results. |

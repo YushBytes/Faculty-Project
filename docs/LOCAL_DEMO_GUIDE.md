@@ -42,7 +42,9 @@ when there is nothing to do.
 ## First sign-in
 
 1. Open http://localhost:3001 → **Sign in** → `ACADLYTICS_ADMIN_EMAIL` / `ACADLYTICS_ADMIN_PASSWORD`
-   from `.env` (the email defaults to `admin@acadlytics.dev`).
+   from `.env` (the email defaults to `admin@acadlytics.dev`) and choose the role **Administrator**.
+   Everyone chooses their own role at sign-in; a wrong choice is refused with
+   "The selected role does not match your account".
 2. **Structure** → add the department (for example `CSE`, Computer Science and Engineering).
 3. **People** → add the HOD for that department, with a password you hand to them.
 4. Faculty accounts appear when a TLP report naming them is uploaded

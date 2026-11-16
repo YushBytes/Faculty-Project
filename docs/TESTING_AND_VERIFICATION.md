@@ -4,6 +4,47 @@ Every result here was observed on 2026-11-15/16 on Windows 11, Docker Desktop 29
 5.5.1), PostgreSQL 16 (container), Python 3.12.5, Node 24.18. Nothing is carried over from earlier
 reports without being re-run.
 
+## 00. Third round (2026-11-16): single Administrator, sign-in role, navigation, tour
+
+Throwaway stack `acadlytics-check3` (own volume, ports 55443 / 8013 / 3014), built from the
+working tree and removed afterwards. Then the local application stack was migrated and redeployed.
+
+| Suite | Command | Result |
+|---|---|---|
+| Backend pytest | `cd backend && pytest` | **2042 passed, 0 failed, 0 skipped** (387 s) — +26 `test_login_role.py`, +12 `test_single_administrator.py`, +1 `test_auth_api.py::test_a_role_field_cannot_elevate` |
+| ruff check / format | | clean |
+| Frontend lint, typecheck | `npm run lint`, `npm run typecheck` | clean, clean |
+| Vitest | `npm test` | **46 passed** (+21: navigation preservation per role, quick actions, tour steps; role sent at sign-in; role-mismatch error) |
+| Production build | `npm run build` (and the web Docker image) | compiled |
+| Playwright, web **container** | `npm run test:e2e` | **27 passed** (+12: `login-role.spec.ts` 6, `workspace.spec.ts` 6) |
+| `scripts/e2e_live.py` | | **132 / 132** (+2: website sign-in without a role is 422; wrong role is 401 `role_mismatch`, no session) |
+| `scripts/verify_live.py` | | **238 passed, 0 failed** (+6 role and Administrator checks) |
+| Migration on a fresh database | API start on an empty volume | `0008 → 0009`; index `uq_users_single_active_admin` present |
+| Concurrency proof | `test_single_administrator.py -k concurrent` with the index removed | **4 failed — two active Administrators committed**; with the index: 12 passed |
+
+Local application database (`facultyproject`, real data): backup
+`~/acadlytics-backups/acadlytics-pre-0009-2026-11-16.dump` (24 tables) taken first; exactly one
+active Administrator and none inactive before; after redeploying, `alembic_version` = `0009`, the
+index present, the **same Administrator id**, still exactly one active, **row counts of all 23
+tables identical**, and the class fingerprint unchanged (74.12 % over 57 present, 1 absent, 58
+results). Website sign-in on the local stack: no role → 422, wrong role → 401 `role_mismatch`
+with no token, right role → 200.
+
+Issues found by the browser suite during this round and fixed before the final run:
+
+- The role options hid the real radio with `pointer-events: none`; a click could not land on it
+  (labels still worked for people). Now the invisible radio covers the whole option. 19 tests had
+  timed out on it; all pass.
+- Two navigation landmarks (sidebar and the new quick actions) were not distinguishable; the
+  sidebar's is now named "Main". Two selectors were scoped to it.
+
+Not reproduced: one earlier targeted pytest run took 40 minutes (80 tests); the same tests then
+took 12 s and the full suite 6½ minutes. Recorded, not explained.
+
+Visual check: screenshots of sign-in (desktop and phone), the Administrator and faculty
+dashboards with quick actions and the tour, the empty My classes page and Attention with its
+note were reviewed; the existing look (palette, type, cards, dashboard layout) is unchanged.
+
 ## 0. Second round (2026-11-16): threshold scope, clean tree, staging tools
 
 Re-run after the decisions of 2026-11-16 (scoped department thresholds, removal of the former

@@ -20,6 +20,7 @@ convention `pk_/uq_/ck_/fk_/ix_<table>_...`. Money-like exact numbers (marks, pe
 | `0006` | `import_batches`; `assessment_results.import_batch_id` |
 | `0007` | `attention_flags`, `interventions`, `intervention_students`, `intervention_reasons` |
 | `0008` | roles ACADEMIC_HEAD / COURSE_COORDINATOR, `course_coordinators`, one active HOD and Academic Head per department, `users.employee_code/designation`, `academic_terms.semester`, `courses.course_type`, SRM assessment families, `import_batches.source_metadata/upload_group_id`, `offering_summaries`, `generated_reports` |
+| `0009` | `uq_users_single_active_admin`: partial unique index on `users(role)` WHERE `role = 'ADMIN' AND is_active` — at most one active Administrator, enforced by the database (no data changed; refuses to run if more than one active Administrator exists) |
 
 Next free revision id: **`0009`**. `tests/test_migrations.py` fails on two heads, on a failed
 down/up round trip, or when models and migrations differ.

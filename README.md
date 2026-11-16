@@ -27,6 +27,12 @@ Every rule above is enforced by the API (`backend/app/modules/organization/scope
 Department analytics thresholds follow the same scope: the Administrator sees every department,
 everyone else their own department and the departments of the classes they can see.
 
+There is **exactly one active Administrator**, enforced by the service and by a database index
+(migration `0009`). The sign-in page asks for email, password and **your role** (Faculty, Course
+Coordinator, Academic Head, HOD, Administrator); the server checks the choice against the account
+and refuses a mismatch, and the choice never grants anything. Menus, quick actions and the welcome
+tour follow the role. Details: [`docs/NAVIGATION_AND_ROLES.md`](docs/NAVIGATION_AND_ROLES.md).
+
 ---
 
 ## 1. Run it (Docker — recommended)
@@ -59,6 +65,9 @@ Stop with `docker compose down` (data is kept in the `pgdata` volume).
 ## 2. First sign-in
 
 There are no demo accounts and no built-in passwords.
+
+Every sign-in asks for the person's role as well as email and password; choose the role the
+account has (the Administrator chooses *Administrator*).
 
 1. **Administrator.** On start, when no Administrator exists, the API creates one from
    `ACADLYTICS_ADMIN_EMAIL` (default `admin@acadlytics.dev`) and `ACADLYTICS_ADMIN_PASSWORD` in
@@ -224,7 +233,7 @@ scale has not been load-tested. Full list: [`docs/KNOWN_LIMITATIONS.md`](docs/KN
 ```
 backend/            FastAPI app: modules/{auth,users,organization,students,assessments,
                     imports,analytics,attention,interventions,reports,overview,audit},
-                    Alembic 0001–0008, 2,003 tests, constraints.txt (pinned versions)
+                    Alembic 0001–0009, 2,040+ tests, constraints.txt (pinned versions)
 frontend/           Next.js 16 app: app/(app)/* pages, components/, lib/api (typed
                     adapters), lib/auth; tests/ (Vitest), e2e/ (Playwright)
 demo/tlp-uploads/   Sample TLP reports (fictional students) for the end-to-end check
