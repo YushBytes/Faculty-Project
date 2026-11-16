@@ -68,8 +68,24 @@ class BusinessRuleError(AppError):
     code = "business_rule_violation"
 
 
-def _envelope(status_code: int, code: str, message: str, details: list[Any]) -> JSONResponse:
-    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+class TooManyAttemptsError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "too_many_attempts"
+
+    def __init__(self, message: str, *, retry_after: int) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _envelope(
+    status_code: int,
+    code: str,
+    message: str,
+    details: list[Any],
+    extra_headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else {}
+    headers.update(extra_headers or {})
     body = {"error": {"code": code, "message": message, "details": details}}
     return JSONResponse(status_code=status_code, content=body, headers=headers)
 
@@ -77,7 +93,10 @@ def _envelope(status_code: int, code: str, message: str, details: list[Any]) -> 
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
-        return _envelope(exc.status_code, exc.code, exc.message, exc.details)
+        extra = (
+            {"Retry-After": str(exc.retry_after)} if isinstance(exc, TooManyAttemptsError) else None
+        )
+        return _envelope(exc.status_code, exc.code, exc.message, exc.details, extra)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

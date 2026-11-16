@@ -1,0 +1,63 @@
+# Exact versions the backend test suite was last run against (pip freeze of the development
+# virtualenv, Python 3.12). Used as *constraints*, not requirements: pyproject.toml still says
+# what the application needs; this file only fixes which version of each gets installed, so the
+# Docker image and CI run what was tested instead of whatever is newest on PyPI that day.
+#
+#   pip install -c constraints.txt -e ".[dev]"
+#
+# Platform-only packages (uvloop on Linux, colorama on Windows) stay unconstrained or are simply
+# not installed where they do not apply. Refresh after an intentional upgrade:
+#   pip install -U -e ".[dev]" && pytest && pip freeze --exclude-editable > constraints.txt (keep this header)
+alembic==1.20.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+cffi==2.1.1
+charset-normalizer==3.5.2
+click==8.5.0
+colorama==0.4.6
+cryptography==50.0.2
+dnspython==2.8.0
+email-validator==2.3.0
+et_xmlfile==2.0.0
+fastapi==0.141.1
+h11==0.16.0
+httpcore2==2.13.1
+httptools==0.8.0
+httpx2==2.13.1
+idna==3.20
+iniconfig==2.3.0
+Mako==1.4.3
+MarkupSafe==3.0.3
+openpyxl==3.1.5
+packaging==26.3
+pdfminer.six==20260107
+pdfplumber==0.11.10
+pillow==12.3.0
+pluggy==1.6.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
+pycparser==3.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pydantic_core==2.46.5
+Pygments==2.21.0
+PyJWT==2.15.1
+pypdfium2==5.14.0
+pytest==9.1.1
+python-dotenv==1.2.3
+python-multipart==0.0.32
+PyYAML==6.0.3
+reportlab==5.0.1
+ruff==0.16.9
+SQLAlchemy==2.1.1
+starlette==1.7.0
+truststore==0.10.4
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzdata==2026.4
+uvicorn==0.54.0
+watchfiles==1.3.0
+websockets==17.1

@@ -30,10 +30,16 @@ regardless of the code:
 
 - `APP_ENV=production` requires `JWT_SECRET_KEY` of at least 32 random characters. The
   application refuses to start with the development fallback.
-- `ACADLYTICS_INITIAL_PASSWORD` must be set in production; the first accounts are not created
-  with a default password there.
-- `FACULTY_DEFAULT_PASSWORD` sets the initial password for faculty logins created from uploaded
-  reports. Change it from the documented default and require a reset on first sign-in.
+- There is no built-in password in any environment. The first Administrator is created only
+  from `ACADLYTICS_ADMIN_PASSWORD`; faculty accounts created from reports cannot sign in until
+  a password is set for them (or `FACULTY_DEFAULT_PASSWORD` is configured).
+- `FACULTY_DEFAULT_PASSWORD` (empty by default) sets one initial password for faculty logins
+  created from uploaded reports. Leave it empty in production; administrators set passwords.
+- Run production with `docker-compose.prod.yml` on top of `docker-compose.yml`: it requires every
+  secret, keeps PostgreSQL off the host network and binds the app to 127.0.0.1 behind HTTPS
+  (`docs/DEPLOYMENT_READINESS.md`).
+- Sign-in is throttled per account (10 failures in 15 minutes -> 429). It runs per process; add a
+  rate limit at the reverse proxy as well.
 - Serve over HTTPS. The session cookie drops its `Secure` flag only when
   `ACADLYTICS_INSECURE_COOKIES=1`, which exists for local demos over plain HTTP and must never be
   set on a deployed instance.
@@ -41,5 +47,11 @@ regardless of the code:
 
 ## Credentials in this repository
 
-The passwords documented in the README and `.env.example` are development defaults for an empty
-local database. They are not secrets, and they are not what a deployment should run with.
+There are no working credentials in the tracked files. `docker-compose.yml` falls back to a
+development JWT secret and the database password `acadlytics` for local use only; the API refuses
+that JWT secret when `APP_ENV=production`, and the production override requires real values.
+
+Two passwords that were built in before November 2026 remain visible in the Git history. No
+account accepts them any more; any installation made from an older commit must reset its
+accounts. The history-rewrite plan is in `docs/SECURITY_AUDIT.md` section 5, which is also the full
+security review of this release.

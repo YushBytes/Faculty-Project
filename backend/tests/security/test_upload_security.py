@@ -106,6 +106,15 @@ def upload(client: TestClient, setup: Fixture, content: bytes, name: str = "mark
 
 
 class TestAcceptedFiles:
+    def test_a_path_in_the_file_name_is_not_recorded(
+        self, client: TestClient, setup: Fixture
+    ) -> None:
+        body = "\n".join(",".join(str(c) for c in row) for row in setup.valid_rows()).encode()
+        response = upload(client, setup, body, "..\\..\\etc/<script>marks.csv")
+        assert response.status_code == 201, response.text
+        # Only the last segment is kept; markup stays text (the web app escapes it).
+        assert response.json()["batch"]["file_name"] == "<script>marks.csv"
+
     def test_a_valid_xlsx_is_accepted(self, client: TestClient, setup: Fixture) -> None:
         response = upload(client, setup, xlsx(setup.valid_rows()))
         assert response.status_code == 201, response.text

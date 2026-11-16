@@ -1,8 +1,9 @@
-# Frontend CI: lint and a production build of the Next.js web app.
+# Frontend CI: lint, type check, unit tests and a production build of the Next.js web app.
 #
-# The build is the real check here. The web app has no test suite of its own; its server routes
-# forward to the API, and the behaviour they wrap is covered by the backend suite. What can break
-# silently is a type error or a server/client boundary mistake, and `next build` catches both.
+# Lint, type check, unit tests (Vitest: the HTTP client and display helpers) and a production
+# build. The browser end-to-end tests (Playwright, `npm run test:e2e`) need a running stack with
+# an Administrator account, so they run locally against a throwaway stack, not here; see
+# docs/TESTING_AND_VERIFICATION.md.
 #
 # Node 22 matches frontend/Dockerfile. No API is needed: ACADLYTICS_API_URL is only read at
 # request time, so a build does not contact the backend.
@@ -50,6 +51,12 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build

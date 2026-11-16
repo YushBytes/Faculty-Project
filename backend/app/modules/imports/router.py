@@ -26,7 +26,10 @@ from app.modules.imports.tlp_service import RoutingError, TlpUploadService
 DB = Annotated[Session, Depends(get_db)]
 Only = Annotated[
     Literal["all", "issues", "errors"],
-    Query(description="Filter preview rows: all, rows with any issue, or rows with errors"),
+    Query(
+        description="Filter preview rows: all, rows with any issue (excluded rows included), "
+        "or rows with errors"
+    ),
 ]
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _COMMON = {

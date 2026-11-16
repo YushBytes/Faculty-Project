@@ -104,6 +104,9 @@ def db_session(connection: Connection) -> Iterator[Session]:
 
 @pytest.fixture
 def client(db_session: Session) -> Iterator[TestClient]:
+    from app.core.throttle import login_throttle
+
+    login_throttle.reset()  # sign-in failure counts are process-wide; start each test clean
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db_session
     with TestClient(app) as test_client:

@@ -92,6 +92,38 @@ def visible_offering_ids(user: User):
     return select(CourseOffering.id).where(visible_offerings(user))
 
 
+def threshold_department_ids(session: Session, user: User) -> set[uuid.UUID] | None:
+    """Departments whose analytics thresholds (``settings``) ``user`` may read; None = all.
+
+        ADMIN    every department
+        others   their own department, plus the department of every offering they can view
+                 (HOD / Academic Head: their department and anything they teach; Course
+                 Coordinator: the departments of their courses; Faculty: home department and
+                 the departments of the classes they teach)
+
+    A department outside this set is reported as 404, like an out-of-scope offering. The
+    thresholds a user sees in an offering's analytics are therefore always ones they may read.
+    """
+    if user.role is Role.ADMIN:
+        return None
+    ids = set(
+        session.scalars(
+            select(Course.department_id)
+            .join(CourseOffering, CourseOffering.course_id == Course.id)
+            .where(visible_offerings(user))
+            .distinct()
+        )
+    )
+    if user.department_id is not None:
+        ids.add(user.department_id)
+    return ids
+
+
+def can_view_department_settings(session: Session, user: User, department_id: uuid.UUID) -> bool:
+    allowed = threshold_department_ids(session, user)
+    return allowed is None or department_id in allowed
+
+
 def can_manage_department(user: User, department_id: uuid.UUID) -> bool:
     """Department records: sections, students, settings, staff. ADMIN, or the department's
     HOD."""

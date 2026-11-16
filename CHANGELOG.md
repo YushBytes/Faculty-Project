@@ -7,6 +7,47 @@ Dates are the dates of the work.
 
 ## Unreleased
 
+### Engineering decisions — 2026-11-16 (second round)
+
+- Department analytics thresholds are scoped: the Administrator sees every department, everyone
+  else their own department and the departments of the classes they can see; anything else is
+  404. Read-only *Analytics thresholds* card on Settings, built from the server's list.
+- The former built-in passwords are gone from every current file; a guard test fails on any
+  literal credential in runtime code or configuration.
+- The Git-history rewrite is prepared, backed up and rehearsed but **not pushed**; `main` must
+  first receive the current code (it still ships the old defaults). `docs/GIT_HISTORY_REWRITE.md`.
+- `docs/STAGING_CHECKLIST.md` and `scripts/load_test.py` (read-only) for the staging run.
+
+### Engineering audit and hardening — 2026-11-16
+
+- Security: the last account that still accepted a leaked former password was rotated; sign-in is
+  throttled per account (10 failures / 15 min → 429 with `Retry-After`); uploaded file names are
+  reduced to their last path segment.
+- Import: column mapping in the review drawer (an unmatched column no longer dead-ends the
+  import); excluded rows stay in the review list so they can be included again; discard errors
+  are shown.
+- API: an unknown report format is a 422 validation error, consistent with `/insights/report`.
+- Docker and deployment: pinned dependency versions (`backend/constraints.txt`), offline code-only
+  rebuilds, graceful API shutdown (`exec uvicorn`), `docker-compose.prod.yml` (required secrets,
+  no published database, 127.0.0.1 behind HTTPS, Secure cookies).
+- Web: one-column cards on phones, a branded not-found page, corrected `roster` adapter type.
+- Tests: Vitest (21) and Playwright (13) for the web app; `scripts/verify_live.py`, an independent
+  live verifier (228 checks); 22 new backend tests (1,974 total). CI runs the frontend type check
+  and unit tests and installs pinned versions.
+- Docs: `FINAL_ENGINEERING_AUDIT`, `BUG_REGISTER`, `TESTING_AND_VERIFICATION`, `SECURITY_AUDIT`,
+  `DEPLOYMENT_READINESS`, `KNOWN_LIMITATIONS`; README, `SECURITY.md`, local guide updated.
+
+### Local release candidate — 2026-11-14
+
+- No built-in passwords and no demo sign-in: the first Administrator comes from
+  `ACADLYTICS_ADMIN_EMAIL` / `ACADLYTICS_ADMIN_PASSWORD`; start-up no longer creates a department,
+  HOD or Academic Head; faculty accounts from TLP reports need a password set in *People*.
+- Self-service password change (`POST /auth/password`, *Settings → Change password*).
+- Default local ports 3001 (web), 8000 (API), 55432 (PostgreSQL); API health check in Compose.
+- `scripts/e2e_live.py`, a live end-to-end check of a running stack (130 checks).
+- `docs/LOCAL_DEMO_GUIDE.md`, `docs/INTEGRATION_AUDIT.md`,
+  `docs/ACADLYTICS_FINAL_QUALITY_AUDIT.md`.
+
 ### Repository and documentation — 2026-11
 
 - MIT licence, `CONTRIBUTING.md`, `SECURITY.md` and a documentation index at `docs/README.md`.

@@ -173,9 +173,17 @@ settings = APIRouter(
 )
 
 
-@settings.get("", response_model=list[SettingRead])
-def list_settings(department_id: uuid.UUID, _: CurrentUser, db: DB) -> list[SettingRead]:
-    return [SettingRead.model_validate(s) for s in SettingsService(db).list(department_id)]
+@settings.get(
+    "",
+    response_model=list[SettingRead],
+    description="The department's analytics threshold overrides. ADMIN: any department; "
+    "others: their own department and the departments of the offerings they can view. "
+    "Anything else is 404. Writing needs ADMIN or the department's HOD.",
+)
+def list_settings(department_id: uuid.UUID, actor: CurrentUser, db: DB) -> list[SettingRead]:
+    return [
+        SettingRead.model_validate(s) for s in SettingsService(db).list(department_id, actor=actor)
+    ]
 
 
 @settings.put("/{key}", response_model=SettingRead, responses=_WRITE)

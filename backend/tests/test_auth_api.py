@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_refresh_token
+from app.modules.audit.models import AuditLog
 from app.modules.auth.models import RefreshToken
 from app.modules.users.models import User
 from tests.conftest import DEFAULT_PASSWORD, auth_headers, login
@@ -265,3 +267,71 @@ class TestLogout:
             client.post(LOGOUT, json={"refresh_token": tokens["refresh_token"]}).status_code == 204
         )
         assert client.post(LOGOUT, json={"refresh_token": "never-issued"}).status_code == 204
+
+
+# ---------------------------------------------------------------- self-service password change
+
+
+def test_change_password_rotates_credentials_and_revokes_sessions(
+    client: TestClient, faculty: User, db_session: Session
+) -> None:
+    tokens = login(client, faculty.email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    changed = client.post(
+        "/api/v1/auth/password",
+        headers=headers,
+        json={"current_password": DEFAULT_PASSWORD, "new_password": "a-brand-new-secret"},
+    )
+    assert changed.status_code == 204, changed.text
+    # Every refresh token of the account is revoked: the old session cannot be renewed.
+    assert (
+        client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        ).status_code
+        == 401
+    )
+    old = client.post(
+        "/api/v1/auth/login", json={"email": faculty.email, "password": DEFAULT_PASSWORD}
+    )
+    assert old.status_code == 401
+    assert login(client, faculty.email, "a-brand-new-secret")["access_token"]
+    actions = [a.action for a in db_session.scalars(select(AuditLog))]
+    assert "password_change" in actions
+
+
+def test_change_password_rejects_wrong_current_password(client: TestClient, faculty: User) -> None:
+    response = client.post(
+        "/api/v1/auth/password",
+        headers=auth_headers(faculty),
+        json={"current_password": "not-my-password", "new_password": "a-brand-new-secret"},
+    )
+    # 422, not 401: a typo must not look like an expired session to the client.
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "business_rule_violation"
+    still = client.post(
+        "/api/v1/auth/login", json={"email": faculty.email, "password": DEFAULT_PASSWORD}
+    )
+    assert still.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"current_password": DEFAULT_PASSWORD, "new_password": "short"},
+        {"current_password": DEFAULT_PASSWORD, "new_password": DEFAULT_PASSWORD},
+        {"current_password": DEFAULT_PASSWORD},
+        {"current_password": DEFAULT_PASSWORD, "new_password": "x" * 129},
+        {"current_password": DEFAULT_PASSWORD, "new_password": "long-enough", "role": "ADMIN"},
+    ],
+)
+def test_change_password_validation(client: TestClient, faculty: User, body: dict) -> None:
+    response = client.post("/api/v1/auth/password", headers=auth_headers(faculty), json=body)
+    assert response.status_code == 422
+
+
+def test_change_password_requires_authentication(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/password",
+        json={"current_password": "whatever-123", "new_password": "a-brand-new-secret"},
+    )
+    assert response.status_code == 401

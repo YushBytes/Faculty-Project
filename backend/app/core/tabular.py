@@ -30,6 +30,25 @@ MAX_ROWS = 5000
 MAX_COLUMNS = 200
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def safe_file_name(name: str | None, *, default: str = "upload") -> str:
+    """The name an uploaded file is recorded under: its last path segment, without control
+    characters, at most 255 characters.
+
+    Browsers send a bare name, but any HTTP client can send ``../../x.csv`` or a name with
+    control characters. Upload bytes are never written to disk, so this is not a path
+    traversal fix; it keeps a stored label, a file-name section hint (``…_A1.xlsx``) and the
+    import history from carrying a path someone else chose.
+    """
+    base = re.split(r"[\\/]", name or "")[-1]
+    base = _CONTROL_CHARS.sub("", base).strip()
+    if base in ("", ".", ".."):
+        return default
+    return base[:255]
+
+
 class FileType(StrEnum):
     CSV = "csv"
     XLSX = "xlsx"

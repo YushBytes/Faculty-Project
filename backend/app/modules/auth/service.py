@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.errors import AuthenticationError
+from app.core.errors import AuthenticationError, BusinessRuleError, TooManyAttemptsError
 from app.core.security import (
     InvalidTokenError,
     create_access_token,
@@ -15,6 +15,8 @@ from app.core.security import (
     password_needs_rehash,
     verify_password,
 )
+from app.core.throttle import login_throttle
+from app.modules.audit.service import AuditService
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.repository import RefreshTokenRepository
 from app.modules.auth.schemas import TokenPair
@@ -33,12 +35,23 @@ class AuthService:
         self._tokens = RefreshTokenRepository(session)
 
     def login(self, email: str, password: str) -> TokenPair:
-        user = self._users.get_by_email(normalise_email(email))
+        key = normalise_email(email)
+        wait = login_throttle.retry_after(key)
+        if wait is not None:
+            # Refused before the password is checked, so guessing cannot continue.
+            raise TooManyAttemptsError(
+                f"Too many failed sign-in attempts for this account. Try again in "
+                f"{(wait + 59) // 60} minute(s), or ask an administrator to reset the password.",
+                retry_after=wait,
+            )
+        user = self._users.get_by_email(key)
         # verify_password always runs (against a dummy hash when user is None) to keep
         # timing uniform; inactive accounts get the same generic message.
         password_ok = verify_password(password, user.password_hash if user else None)
         if user is None or not password_ok or not user.is_active:
+            login_throttle.failed(key)
             raise AuthenticationError(INVALID_CREDENTIALS)
+        login_throttle.succeeded(key)
 
         now = datetime.now(UTC)
         if password_needs_rehash(user.password_hash):
@@ -103,6 +116,26 @@ class AuthService:
         if current is not None:
             self._tokens.revoke_family(current.family_id, datetime.now(UTC))
             self._session.commit()
+
+    def change_password(self, user: User, current_password: str, new_password: str) -> None:
+        """Self-service password change. Signs the person out of every session (all refresh
+        tokens are revoked), so a password that leaked stops working everywhere at once."""
+        if not verify_password(current_password, user.password_hash):
+            raise BusinessRuleError(
+                "The current password is not correct.",
+                details=[{"loc": ["body", "current_password"], "message": "Incorrect password."}],
+            )
+        if new_password == current_password:
+            raise BusinessRuleError(
+                "The new password must be different from the current one.",
+                details=[{"loc": ["body", "new_password"], "message": "Same as current."}],
+            )
+        user.password_hash = hash_password(new_password)
+        self._tokens.revoke_all_for_user(user.id, datetime.now(UTC))
+        AuditService(self._session).record(
+            actor_id=user.id, entity="user", entity_id=user.id, action="password_change"
+        )
+        self._session.commit()
 
     def authenticate(self, access_token: str) -> User:
         try:

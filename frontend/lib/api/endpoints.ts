@@ -10,6 +10,12 @@ const q = (filters?: ScopeFilters, extra?: Query): Query => ({ ...(filters as Qu
 
 export const workspaceApi = { get: () => api<Workspace>("/me/workspace") };
 
+/** Self-service password change. On success the server revokes every session of the account. */
+export const accountApi = {
+  changePassword: (current_password: string, new_password: string) =>
+    api<void>("/auth/password", { method: "POST", body: { current_password, new_password } }),
+};
+
 export const insightsApi = {
   overview: (filters: ScopeFilters, signal?: AbortSignal) => api<Overview>("/insights/overview", { query: q(filters), signal }),
   offerings: (filters: ScopeFilters) => api<{ period: string; items: OfferingRow[]; total: number }>("/insights/offerings", { query: q(filters) }),
@@ -55,7 +61,8 @@ export const offeringsApi = {
   assessments: (id: string) => api<{ items: AssessmentDetail[]; weightage_total: number; warnings: string[] }>(`/offerings/${id}/assessments`),
   applyScheme: (id: string) => api<{ items: AssessmentDetail[] }>(`/offerings/${id}/assessments/apply-scheme`, { method: "POST" }),
   results: (id: string, publishedOnly = false) => api<OfferingResults>(`/offerings/${id}/results`, { query: { published_only: publishedOnly } }),
-  roster: (id: string) => api<Page<{ student: { id: string; register_number: string; full_name: string; is_active: boolean }; status: string }>>(`/offerings/${id}/students`, { query: { limit: 200 } }),
+  // The backend returns the whole roster as a list (no pagination envelope).
+  roster: (id: string) => api<{ student: { id: string; register_number: string; full_name: string; is_active: boolean }; status: string; enrolled_at: string; dropped_at: string | null }[]>(`/offerings/${id}/students`),
   assignFaculty: (id: string, userId: string) => api<OfferingRead>(`/offerings/${id}/faculty`, { body: { user_id: userId } }),
   unassignFaculty: (id: string, userId: string) => api<OfferingRead>(`/offerings/${id}/faculty/${userId}`, { method: "DELETE" }),
   classReport: (id: string, kind: string, format: string, studentId?: string) => download(`/offerings/${id}/reports/${kind}`, { format, student_id: studentId }),
@@ -104,6 +111,8 @@ export const importsApi = {
   preview: (batchId: string, only: "all" | "issues" | "errors" = "issues") => api<ImportPreview>(`/imports/${batchId}/preview`, { query: { only } }),
   fix: (batchId: string, fixes: { row: number; column: string; value: string | null }[]) => api<ImportPreview>(`/imports/${batchId}/fix`, { body: { fixes }, query: { only: "issues" } }),
   exclude: (batchId: string, rows: number[], excluded = true) => api<ImportPreview>(`/imports/${batchId}/exclude`, { body: { rows, excluded }, query: { only: "issues" } }),
+  /** header -> assessment id, "ignore" to drop the column, or null to go back to automatic matching. */
+  mapColumns: (batchId: string, mappings: Record<string, string | null>) => api<ImportPreview>(`/imports/${batchId}/mapping`, { body: { mappings }, query: { only: "issues" } }),
   confirm: (batchId: string, publish = true) => api<{ created: number; updated: number; unchanged: number }>(`/imports/${batchId}/confirm`, { method: "POST", query: { publish } }),
   discard: (batchId: string) => api(`/imports/${batchId}/discard`, { method: "POST" }),
   history: (query: Query) => api<Page<ImportPreview["batch"] & { uploaded_by_id: string | null }>>("/imports", { query }),
@@ -120,6 +129,8 @@ export const importsApi = {
 export const orgApi = {
   departments: () => api<Page<Department>>("/departments", { query: { limit: 200 } }),
   createDepartment: (body: { code: string; name: string }) => api<Department>("/departments", { body }),
+  /** A department's analytics threshold overrides. Scoped by the server: 404 outside the user's departments. */
+  departmentSettings: (departmentId: string) => api<{ key: string; value: unknown; updated_at: string }[]>(`/departments/${departmentId}/settings`),
   terms: () => api<Page<Term>>("/terms", { query: { limit: 200 } }),
   createTerm: (body: unknown) => api<Term>("/terms", { body }),
   updateTerm: (id: string, body: unknown) => api<Term>(`/terms/${id}`, { method: "PATCH", body }),

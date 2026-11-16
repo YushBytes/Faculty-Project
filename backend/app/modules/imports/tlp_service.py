@@ -27,7 +27,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, NotFoundError
-from app.core.tabular import IDENTITY_HEADERS, Table, normalise_header, read_table
+from app.core.tabular import (
+    IDENTITY_HEADERS,
+    Table,
+    normalise_header,
+    read_table,
+    safe_file_name,
+)
 from app.modules.assessments.models import Assessment
 from app.modules.imports.models import ImportBatch, ImportStatus
 from app.modules.imports.provision import Provisioner, SectionRequiredError
@@ -76,7 +82,8 @@ class TlpUploadService:
     ) -> TlpUploadRead:
         """``sections`` maps a file name to the section it is for, when neither the file name
         nor the file's students tell (the upload screen asks for it)."""
-        sections = sections or {}
+        # Keyed by the same safe name the file is recorded under.
+        sections = {safe_file_name(k): v for k, v in (sections or {}).items()}
         if not files:
             raise RoutingError("Choose at least one file.")
         if len(files) > MAX_FILES:
@@ -86,7 +93,7 @@ class TlpUploadService:
         seen: dict[str, str] = {}
         results: list[TlpFileResult] = []
         for name, content in files:
-            file_name = (name or "upload")[:255]
+            file_name = safe_file_name(name)
             digest = hashlib.sha256(content).hexdigest()
             if digest in seen:
                 results.append(

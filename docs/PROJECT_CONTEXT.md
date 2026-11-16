@@ -538,6 +538,8 @@ Original options, retained for the record:
 
 Sequenced so that Analytics layer is unblocked as early as possible while Platform layer still owns the foundation.
 
+> **Status, 2026-11-14:** every phase below is delivered (platform, imports, analytics, attention, interventions and outcomes, reports, the five-role hierarchy and the web app). The list is kept as the record of the order of work; phases written in the future tense are history, not open work. Current state and open issues: [`ACADLYTICS_FINAL_QUALITY_AUDIT.md`](ACADLYTICS_FINAL_QUALITY_AUDIT.md).
+
 **Phase 0 — Environment and hygiene (blocking, no application code) — PARTLY DONE 2026-09-26**
 Done: git repository initialised in the project folder with a `.gitignore` (RISK-2); blueprint copied to `docs/reference/`; DECISION-1 settled (Option A).
 Still open: RISK-3 (OneDrive sync of `.venv` / Docker volumes), DECISION-2 (Python version pin), DECISION-3 (grades), DECISION-4 (PDF engine).

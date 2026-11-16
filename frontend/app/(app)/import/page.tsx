@@ -184,7 +184,7 @@ export default function ImportPage() {
           </div>
         </Card>
         <Card title="What happens" subtitle="Everything comes from your files">
-          <div className="statement"><CheckCircle2 size={16} /><span>The title block gives the <b>semester</b> (AY2025-26-EVEN), the <b>course</b> (21CSC201J and its name), the <b>faculty</b> (name and staff id — a login is created as <i>staffid</i>@srmist.edu.in) and the <b>test</b> with its maximum.</span></div>
+          <div className="statement"><CheckCircle2 size={16} /><span>The title block gives the <b>semester</b> (AY2025-26-EVEN), the <b>course</b> (21CSC201J and its name), the <b>faculty</b> (name and staff id — a login is created as <i>staffid</i>@srmist.edu.in; its password is set in <b>People</b>) and the <b>test</b> with its maximum.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>The <b>section</b> comes from where the students already are, else the file name (…_A1.xlsx), else you type it. A file name that contradicts the students is stopped.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>Each row gives a <b>student</b> (register number and name). Existing records are reused, never overwritten.</span></div>
           <div className="statement"><CheckCircle2 size={16} /><span>Marks are numbers within the maximum; <b>Absent</b> stays absent — never zero. The % column is checked against the mark.</span></div>
@@ -282,6 +282,46 @@ function countOf(files: TlpFile[]) {
   return counts;
 }
 
+/**
+ * Column-level problems: a header that names no assessment of the class (or more than one).
+ * The server never guesses, so the person maps the column to an assessment or ignores it.
+ * Without this, a column error blocks Confirm with nothing on screen to act on.
+ */
+function ColumnMapping({ preview, busy, onMap }: { preview: ImportPreview; busy: boolean; onMap: (header: string, target: string | null) => void }) {
+  const assessments = useApi(() => offeringsApi.assessments(preview.batch.offering_id), [preview.batch.offering_id]);
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const columns = preview.columns.filter((c) => c.issues.length > 0 || c.mapped_by === "user" || c.role === "ignored");
+  if (!columns.length) return null;
+  return (
+    <>
+      <div className="label">Columns ({columns.length})</div>
+      {columns.map((c) => {
+        const error = c.issues.find((i) => i.level === "error");
+        const manual = c.mapped_by === "user" || c.role === "ignored";
+        return (
+          <div key={c.header} className="card card-flat" style={{ padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+              <div><b>“{c.header}”</b> <span className="muted">→ {c.role === "ignored" ? "ignored" : c.assessment_name ?? "no assessment"}</span></div>
+              {manual && <button className="btn btn-sm" disabled={busy} onClick={() => onMap(c.header, null)}>Undo</button>}
+            </div>
+            {c.issues.map((i, n) => <p key={n} style={{ fontSize: 13.5, marginTop: 6, color: i.level === "error" ? "var(--red)" : i.level === "warning" ? "var(--amber)" : "var(--muted)" }}>{i.message}</p>)}
+            {error && c.role === "assessment" && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <select className="select select-sm" style={{ minWidth: 180 }} aria-label={`Assessment for column ${c.header}`} value={choice[c.header] ?? ""} onChange={(e) => setChoice((x) => ({ ...x, [c.header]: e.target.value }))}>
+                  <option value="">Choose the assessment…</option>
+                  {(assessments.data?.items ?? []).map((a) => <option key={a.id} value={a.id}>{a.name} (max {a.max_marks})</option>)}
+                </select>
+                <button className="btn btn-sm btn-primary" disabled={busy || !choice[c.header]} onClick={() => onMap(c.header, choice[c.header])}>Map column</button>
+                <button className="btn btn-sm" disabled={busy} onClick={() => onMap(c.header, "ignore")}>Ignore this column</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function ReviewDrawer({ file, onClose, onChanged }: { file: TlpFile; onClose: () => void; onChanged: () => void }) {
   const { notify } = useSession();
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -297,7 +337,11 @@ function ReviewDrawer({ file, onClose, onChanged }: { file: TlpFile; onClose: ()
   };
   return (
     <Drawer title={file.file_name} subtitle={`${file.offering_label ?? ""} → ${file.assessment_name ?? ""}`} onClose={onClose}
-      footer={<><button className="btn btn-danger" disabled={busy} onClick={async () => { await importsApi.discard(file.batch_id!); notify("Import discarded"); onChanged(); onClose(); }}><Trash2 size={15} /> Discard file</button><button className="btn" onClick={onClose}>Done</button></>}>
+      footer={<><button className="btn btn-danger" disabled={busy} onClick={async () => {
+        setBusy(true); setError("");
+        try { await importsApi.discard(file.batch_id!); notify("Import discarded"); onChanged(); onClose(); }
+        catch (err) { setError(err instanceof ApiError ? err.message : String(err)); setBusy(false); }
+      }}><Trash2 size={15} /> Discard file</button><button className="btn" onClick={onClose}>Done</button></>}>
       {load.loading && !preview ? <LoadingBlock rows={8} /> : preview && (
         <>
           <div className="grid g-2">
@@ -305,6 +349,7 @@ function ReviewDrawer({ file, onClose, onChanged }: { file: TlpFile; onClose: ()
             <div className="kpi"><div className="k-label">This file</div><div style={{ fontSize: 14, marginTop: 6 }}>{num(preview.summary.total_rows as number)} rows · {num(preview.summary.cells_to_write as number)} marks to write<br />{num(preview.summary.absent_markers as number)} absent · {num(preview.summary.will_update as number)} updates<br />{num(preview.summary.errors as number)} errors · {num(preview.summary.warnings as number)} warnings</div></div>
           </div>
           {preview.file_issues.map((i) => <Notice key={i.code + i.message} tone={i.level === "error" ? "error" : i.level === "warning" ? "warn" : "info"}>{i.message}</Notice>)}
+          <ColumnMapping preview={preview} busy={busy} onMap={(header, target) => apply(() => importsApi.mapColumns(file.batch_id!, { [header]: target }), target === null ? "Column back to automatic matching" : target === "ignore" ? "Column ignored" : "Column mapped")} />
           {preview.missing_students.length > 0 && <Notice tone="warn">{preview.missing_students.length} enrolled student(s) are not in the file; their marks stay as they are: {preview.missing_students.slice(0, 6).map((s) => s.register_number).join(", ")}{preview.missing_students.length > 6 ? " …" : ""}</Notice>}
           <div className="label">Rows with issues ({rows.length})</div>
           {rows.length === 0 ? <p className="muted">No row-level issues.</p> : rows.map((r) => {

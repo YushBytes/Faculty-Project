@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.modules.assessments.models import Assessment, AssessmentResult, ResultStatus
 from app.modules.imports.provision import admission_year, section_from_file_name
 from app.modules.imports.tlp_writer import TlpHeader, TlpRow, to_csv, to_pdf, to_xlsx
@@ -118,9 +119,33 @@ def test_first_report_sets_up_everything_and_stores_only_its_data(
     absent = written[rows[1].register_number]
     assert absent.status is ResultStatus.ABSENT and absent.score is None  # never 0
 
+    # No shared default password: the account cannot sign in until someone sets one.
+    for guess in ("902049", "Password@123", "srmist@123", "902049@srmist"):
+        denied = client.post(
+            f"{API}/auth/login", json={"email": "902049@srmist.edu.in", "password": guess}
+        )
+        assert denied.status_code == 401, guess
+    reset = client.patch(
+        f"{API}/users/{teacher.id}", headers=auth_headers(hod), json={"password": "Set-By-HOD-2026"}
+    )
+    assert reset.status_code == 200, reset.text
     login = client.post(
         f"{API}/auth/login",
-        json={"email": "902049@srmist.edu.in", "password": "Faculty@2026"},
+        json={"email": "902049@srmist.edu.in", "password": "Set-By-HOD-2026"},
+    )
+    assert login.status_code == 200, login.text
+
+
+def test_configured_faculty_password_is_used(
+    client: TestClient, db_session: Session, hod, monkeypatch
+) -> None:
+    monkeypatch.setattr(get_settings(), "faculty_default_password", "Configured@2026")
+    rows = students(2)
+    body = upload(client, hod, [("DSA_A1.xlsx", to_xlsx(header(), rows))])
+    client.post(f"{API}/tlp-uploads/{body['group_id']}/confirm", headers=auth_headers(hod))
+    login = client.post(
+        f"{API}/auth/login",
+        json={"email": "902049@srmist.edu.in", "password": "Configured@2026"},
     )
     assert login.status_code == 200, login.text
 

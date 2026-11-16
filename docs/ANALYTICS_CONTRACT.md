@@ -193,7 +193,7 @@ Import them; never redefine them. Your enums live in your modules.
 ## 8. Seed data (C11)
 
 `python -m app.cli seed-demo` on an empty database (refused in production and on non-empty
-databases). Password: `ACADLYTICS_DEMO_PASSWORD` (default `Demo@2026pass`). Fictional people,
+databases). Password: `ACADLYTICS_DEMO_PASSWORD` (required, no default; development only, never run automatically). Fictional people,
 `@acadlytics.dev` emails.
 
 - Accounts: `admin@`, `hod.cse@`, `priya.nair@` (DSA-A1, OS-C1), `arjun.mehta@` (DSA-B1, OS-A1),

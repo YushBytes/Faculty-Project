@@ -36,11 +36,22 @@ class Settings(BaseSettings):
     # Concurrent refreshes of one cookie (two tabs, a reload mid-refresh) within this many
     # seconds are treated as a race, not token theft. 0 disables the allowance.
     refresh_reuse_grace_seconds: int = Field(default=10, ge=0, le=60)
+    # Failed sign-in throttle (app/core/throttle.py): this many wrong passwords for one email
+    # within the window, and that email is refused (429) until the window passes. 0 disables.
+    login_max_failures: int = Field(default=10, ge=0, le=1000)
+    login_window_seconds: int = Field(default=900, ge=1, le=86400)
 
-    # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") sign in as
-    # <staff id>@<domain> with this initial password until they change it.
+    # Faculty accounts set up from TLP reports ("handled by Dr X (902049)") get the login
+    # <staff id>@<domain>. With FACULTY_DEFAULT_PASSWORD set they sign in with it (and should
+    # change it in Settings); unset, the account has a random unknown password and cannot sign
+    # in until an Administrator or HOD sets one in People. There is no built-in default.
     institution_email_domain: str = "srmist.edu.in"
-    faculty_default_password: str = Field(default="Faculty@2026", min_length=8)
+    faculty_default_password: str | None = Field(default=None, min_length=8)
+
+    @field_validator("faculty_default_password", mode="before")
+    @classmethod
+    def _empty_means_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("database_url")
     @classmethod

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import ErrorResponse
 from app.db.session import get_db
 from app.modules.auth.dependencies import CurrentUser
-from app.modules.auth.schemas import LoginRequest, RefreshRequest, TokenPair
+from app.modules.auth.schemas import LoginRequest, PasswordChange, RefreshRequest, TokenPair
 from app.modules.auth.service import AuthService
 from app.modules.users.schemas import UserRead
 
@@ -54,3 +54,17 @@ def logout(body: RefreshRequest, service: AuthServiceDep) -> None:
 @router.get("/me", response_model=UserRead, responses=_401, summary="Current user")
 def me(user: CurrentUser) -> UserRead:
     return UserRead.model_validate(user)
+
+
+@router.post(
+    "/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**_401, 422: {"model": ErrorResponse, "description": "Wrong current password"}},
+    summary="Change your own password",
+    description=(
+        "Verifies the current password, sets the new one and revokes every refresh token of "
+        "the account, so all sessions (this one included) must sign in again."
+    ),
+)
+def change_password(body: PasswordChange, user: CurrentUser, service: AuthServiceDep) -> None:
+    service.change_password(user, body.current_password, body.new_password)

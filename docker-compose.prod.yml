@@ -1,0 +1,49 @@
+# Production overrides. Layer on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file /secure/acadlytics.env up -d --build
+#
+# What changes against local development (see docs/DEPLOYMENT_READINESS.md):
+#   - APP_ENV=production: the API refuses to start with the development JWT secret.
+#   - Every secret is REQUIRED (the ${VAR:?} form): a missing value stops `up` instead of
+#     silently falling back to a development default.
+#   - PostgreSQL is not published on the host; only the api container reaches it.
+#   - The API is bound to 127.0.0.1 (for the reverse proxy and health checks), not 0.0.0.0.
+#   - The web app is bound to 127.0.0.1 too: put an HTTPS reverse proxy (nginx, Caddy, a cloud
+#     load balancer) in front of it. The session cookie is Secure here, so plain http will not
+#     keep anyone signed in -- deliberately.
+#   - Containers restart on failure.
+#
+# This file has not been deployed to any cloud environment; it is the reviewed starting point.
+
+services:
+  db:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    ports: !reset []
+    restart: unless-stopped
+
+  api:
+    environment:
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY (48+ random characters)}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ACADLYTICS_ADMIN_EMAIL: ${ACADLYTICS_ADMIN_EMAIL:?set ACADLYTICS_ADMIN_EMAIL}
+      # Only read on the very first start (no Administrator yet). Remove it from the env file
+      # once the Administrator exists.
+      ACADLYTICS_ADMIN_PASSWORD: ${ACADLYTICS_ADMIN_PASSWORD:-}
+      FACULTY_DEFAULT_PASSWORD: ""
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-10}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
+    ports: !override
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  web:
+    environment:
+      ACADLYTICS_API_URL: http://api:8000
+      ACADLYTICS_INSECURE_COOKIES: "0"
+    ports: !override
+      - "127.0.0.1:${WEB_PORT:-3001}:3000"
+    restart: unless-stopped

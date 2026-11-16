@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, true
 from sqlalchemy.orm import Session
 
 from app.modules.interventions.models import Intervention  # noqa: F401  (mapper registry)
@@ -20,6 +20,7 @@ from app.modules.organization.models import (
     OfferingFaculty,
     Section,
 )
+from app.modules.organization.scope import can_manage_department, threshold_department_ids
 from app.modules.users.models import Role, User
 
 INSTITUTION = "SRM Institute of Science and Technology"
@@ -60,6 +61,15 @@ def workspace(session: Session, user: User) -> dict[str, Any]:
     elif role in (Role.HOD, Role.ACADEMIC_HEAD) and department:
         headline += f" — {department.name}"
     manages_department = role in (Role.ADMIN, Role.HOD)
+    # Departments whose analytics thresholds this user may read (same rule the API enforces).
+    readable = threshold_department_ids(session, user)
+    threshold_departments = list(
+        session.scalars(
+            select(Department)
+            .where(true() if readable is None else Department.id.in_(readable))
+            .order_by(Department.code)
+        )
+    )
     return {
         "user": {
             "id": str(user.id),
@@ -123,6 +133,15 @@ def workspace(session: Session, user: User) -> dict[str, Any]:
             if current
             else None
         ),
+        "threshold_departments": [
+            {
+                "id": str(d.id),
+                "code": d.code,
+                "name": d.name,
+                "can_edit": can_manage_department(user, d.id),
+            }
+            for d in threshold_departments
+        ],
         "capabilities": {
             "manage_users": role in (Role.ADMIN, Role.HOD, Role.ACADEMIC_HEAD),
             "manage_departments": role is Role.ADMIN,

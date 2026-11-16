@@ -1,72 +1,75 @@
-"""First start of an empty platform: the sign-in accounts, and nothing else.
+"""First start of a platform: the Administrator account, and nothing else.
 
 Every semester, course, section, student, faculty member and mark comes from the TLP
-reports people upload (see ``modules/imports/provision.py``). What cannot come from a report
-is who runs the platform, so a database with no users gets:
+reports people upload (see ``modules/imports/provision.py``); departments, HODs and Academic
+Heads are created by the Administrator in the app (*Structure*, *People*). What cannot come
+from anywhere else is the first Administrator, so when no ADMIN account exists this creates:
 
-    admin@acadlytics.dev          ADMIN          the whole institution
-    hod.cse@acadlytics.dev        HOD            Computer Science and Engineering
-    academic.head@acadlytics.dev  ACADEMIC_HEAD  Computer Science and Engineering
+    ACADLYTICS_ADMIN_EMAIL     (default admin@acadlytics.dev)
+    ACADLYTICS_ADMIN_PASSWORD  (no default; at least 8 characters)
 
-with the password in ACADLYTICS_INITIAL_PASSWORD (default ``Demo@2026pass`` outside
-production; production refuses to start without one being set). Names, emails and passwords
-can be changed afterwards in the app. Idempotent: does nothing once any user exists.
+There is no built-in password. Without ACADLYTICS_ADMIN_PASSWORD nothing is created and the
+caller is told how to create the account (``python -m app.cli create-admin``). Idempotent: does
+nothing once an Administrator exists. No academic data is ever created here.
 """
 
 from __future__ import annotations
 
 import os
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import Environment, get_settings
-from app.core.security import hash_password
-from app.modules.organization.models import Department
 from app.modules.users.models import Role, User
+from app.modules.users.schemas import UserCreate
+from app.modules.users.service import UserService
 
-DEFAULT_PASSWORD = "Demo@2026pass"
-ACCOUNTS = (
-    ("admin@acadlytics.dev", "Administrator", Role.ADMIN, "Administrator"),
-    ("hod.cse@acadlytics.dev", "Head of Department", Role.HOD, "Professor and Head"),
-    ("academic.head@acadlytics.dev", "Academic Head", Role.ACADEMIC_HEAD, "Academic Head"),
-)
+DEFAULT_ADMIN_EMAIL = "admin@acadlytics.dev"
 
 
 class BootstrapError(RuntimeError):
     pass
 
 
+def admin_password_from_env() -> str | None:
+    # ACADLYTICS_INITIAL_PASSWORD is the earlier name of the same setting.
+    return os.environ.get("ACADLYTICS_ADMIN_PASSWORD") or os.environ.get(
+        "ACADLYTICS_INITIAL_PASSWORD"
+    )
+
+
 def bootstrap(session: Session) -> list[tuple[str, str]]:
-    """Create the sign-in accounts when there are no users. Returns (email, role) created."""
-    if session.scalar(select(func.count()).select_from(User)):
+    """Create the Administrator when none exists and a password is configured.
+
+    Returns the (email, role) pairs created: empty when an Administrator already exists or no
+    password is configured (see :func:`needs_admin`).
+    """
+    if not needs_admin(session):
         return []
-    password = os.environ.get("ACADLYTICS_INITIAL_PASSWORD")
+    password = admin_password_from_env()
     if not password:
-        if get_settings().app_env is Environment.PRODUCTION:
-            raise BootstrapError(
-                "Set ACADLYTICS_INITIAL_PASSWORD to create the first accounts in production."
-            )
-        password = DEFAULT_PASSWORD
-    department = session.scalar(select(Department).where(Department.code == "CSE"))
-    if department is None:
-        department = Department(code="CSE", name="Computer Science and Engineering")
-        session.add(department)
-        session.flush()
-    hashed = hash_password(password)
-    created = []
-    for email, name, role, designation in ACCOUNTS:
-        session.add(
-            User(
-                email=email,
-                full_name=name,
-                password_hash=hashed,
-                role=role,
-                is_active=True,
-                designation=designation,
-                department_id=None if role is Role.ADMIN else department.id,
-            )
+        return []
+    email = os.environ.get("ACADLYTICS_ADMIN_EMAIL") or DEFAULT_ADMIN_EMAIL
+    name = os.environ.get("ACADLYTICS_ADMIN_NAME") or "Administrator"
+    try:
+        data = UserCreate(
+            email=email,
+            full_name=name,
+            password=password,
+            role=Role.ADMIN,
+            designation="Administrator",
         )
-        created.append((email, role.value))
-    session.commit()
-    return created
+    except ValidationError as exc:
+        # Field names and reasons only: never echo the submitted values (the password) to logs.
+        reasons = "; ".join(
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
+            for e in exc.errors(include_input=False)
+        )
+        raise BootstrapError(f"Invalid administrator settings: {reasons}") from None
+    user = UserService(session).create_user(data)
+    return [(user.email, Role.ADMIN.value)]
+
+
+def needs_admin(session: Session) -> bool:
+    return not session.scalar(select(func.count()).select_from(User).where(User.role == Role.ADMIN))
